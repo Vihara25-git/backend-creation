@@ -1,4 +1,4 @@
-import { mockDb } from "../mock/mockData";
+import apiClient from '../lib/api';
 
 export interface Priority {
   id: number;
@@ -22,45 +22,88 @@ export const getAllPriorities = async (
   _page: number = 0,
   _pageSize: number = 100
 ): Promise<GetPrioritiesResponse> => {
-  const priorities = mockDb.getPriorities();
+  try {
+    const response = await apiClient.get(`/api/v1/priority/view?page=${_page}&size=${_pageSize}`);
+    const resData = response.data?.data;
+    const items = Array.isArray(resData) ? resData : (resData?.content || []);
+
+    return {
+      status: 'success',
+      message: 'Priorities fetched successfully',
+      data: {
+        content: items.map((p: any) => ({
+          id: p.priorityId || p.id,
+          name: p.priorityName || p.name || '',
+          color: p.colorCode || p.color || '#000000',
+        })),
+        totalElements: resData?.totalElements ?? items.length,
+        totalPages: resData?.totalPages ?? 1,
+        size: resData?.size ?? _pageSize,
+        number: resData?.number ?? _page,
+      },
+    };
+  } catch (err: any) {
+    if (err.response?.status === 404) {
+      return {
+        status: 'success',
+        message: 'Priorities fetched successfully',
+        data: {
+          content: [],
+          totalElements: 0,
+          totalPages: 1,
+          size: _pageSize,
+          number: _page,
+        },
+      };
+    }
+    throw err;
+  }
+};
+
+export const updatePriority = async (id: number, data: { name: string; color: string }) => {
+  const response = await apiClient.put(`/api/v1/priority/update/${id}`, {
+    priorityName: data.name,
+    colorCode: data.color,
+  });
+  const resData = response.data?.data || response.data;
   return {
     status: 'success',
-    message: 'Priorities fetched successfully',
+    statusCode: response.status || 200,
+    message: response.data?.statusMessage || 'Priority updated successfully',
+    statusMessage: response.data?.statusMessage || 'Priority updated successfully',
     data: {
-      content: priorities.map(p => ({ id: p.id, name: p.priorityName, color: p.color })),
-      totalElements: priorities.length,
-      totalPages: 1,
-      size: 100,
-      number: 0,
+      id: resData?.priorityId || id,
+      name: resData?.priorityName || data.name,
+      color: resData?.colorCode || data.color,
     },
   };
 };
 
-export const updatePriority = async (id: number, data: { name: string; color: string }) => {
-  const updated = mockDb.updatePriority(id, data);
-  return {
-    status: 'success',
-    statusCode: 200,
-    message: 'Priority updated successfully',
-    data: updated ? { id: updated.id, name: updated.priorityName, color: updated.color } : null,
-  };
-};
-
 export const deletePriority = async (id: number) => {
-  mockDb.deletePriority(id);
+  const response = await apiClient.delete(`/api/v1/priority/delete/${id}`);
   return {
     status: 'success',
-    statusCode: 200,
-    message: 'Priority deleted successfully',
+    statusCode: response.status || 200,
+    message: response.data?.statusMessage || 'Priority deleted successfully',
+    statusMessage: response.data?.statusMessage || 'Priority deleted successfully',
   };
 };
 
 export const createPriority = async (data: { name: string; color: string }) => {
-  const created = mockDb.createPriority(data);
+  const response = await apiClient.post('/api/v1/priority/save', {
+    priorityName: data.name,
+    colorCode: data.color,
+  });
+  const resData = response.data?.data || response.data;
   return {
     status: 'success',
-    statusCode: 200,
-    message: 'Priority created successfully',
-    data: { id: created.id, name: created.priorityName, color: created.color },
+    statusCode: response.status || 200,
+    message: response.data?.statusMessage || 'Priority created successfully',
+    statusMessage: response.data?.statusMessage || 'Priority created successfully',
+    data: {
+      id: resData?.priorityId || resData?.id,
+      name: resData?.priorityName || data.name,
+      color: resData?.colorCode || data.color,
+    },
   };
 };

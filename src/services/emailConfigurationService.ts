@@ -1,4 +1,4 @@
-import { mockDb } from "../mock/mockData";
+import apiClient from "../lib/api";
 
 export interface SmtpConfigRequest {
   name: string;
@@ -45,56 +45,127 @@ export interface ApiResponse<T> {
 }
 
 export const createSmtpConfig = async (data: SmtpConfigRequest): Promise<SmtpConfigResponse> => {
-  const created = mockDb.createEmailConfig(data);
-  return created as any;
+  const response = await apiClient.post('/api/v1/email-config/create', {
+    name: data.name,
+    host: data.smtpHost,
+    port: data.smtpPort,
+    username: data.username,
+    password: data.password,
+    fromEmail: data.fromEmail,
+    fromName: data.fromName,
+  });
+  const resData = response.data?.data || response.data;
+  return {
+    id: resData?.id,
+    name: resData?.name || data.name,
+    smtpHost: resData?.host || data.smtpHost,
+    smtpPort: resData?.port || data.smtpPort,
+    username: resData?.username || data.username,
+    password: resData?.password || data.password,
+    fromEmail: resData?.fromEmail || data.fromEmail,
+    fromName: resData?.fromName || data.fromName,
+  };
 };
 
 export const getSmtpConfigs = async (): Promise<SmtpConfigResponse[]> => {
-  return mockDb.getEmailConfigs() as any[];
+  try {
+    const response = await apiClient.get('/api/v1/email-config');
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+
+    return items.map((c: any) => ({
+      id: c.id,
+      name: c.name || '',
+      smtpHost: c.host || c.smtpHost || '',
+      smtpPort: c.port || c.smtpPort || 587,
+      username: c.username || '',
+      password: c.password || '',
+      fromEmail: c.fromEmail || '',
+      fromName: c.fromName || '',
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+    }));
+  } catch {
+    return [];
+  }
 };
 
 export const updateSmtpConfig = async (id: number, data: SmtpConfigRequest): Promise<SmtpConfigResponse> => {
-  const updated = mockDb.updateEmailConfig(id, data);
-  return (updated || data) as any;
+  const response = await apiClient.put(`/api/v1/email-config/${id}`, {
+    name: data.name,
+    host: data.smtpHost,
+    port: data.smtpPort,
+    username: data.username,
+    password: data.password,
+    fromEmail: data.fromEmail,
+    fromName: data.fromName,
+  });
+  const resData = response.data?.data || response.data;
+  return {
+    id: resData?.id || id,
+    name: resData?.name || data.name,
+    smtpHost: resData?.host || data.smtpHost,
+    smtpPort: resData?.port || data.smtpPort,
+    username: resData?.username || data.username,
+    password: resData?.password || data.password,
+    fromEmail: resData?.fromEmail || data.fromEmail,
+    fromName: resData?.fromName || data.fromName,
+  };
 };
 
 export const deleteSmtpConfig = async (id: number): Promise<void> => {
-  mockDb.deleteEmailConfig(id);
+  await apiClient.delete(`/api/v1/email-config/${id}`);
 };
 
 export const getAllUsers = async (): Promise<SimpleUser[]> => {
-  const users = mockDb.getUsers();
-  return users.map(u => ({
-    id: u.id,
-    userId: u.id,
-    firstName: u.firstName,
-    lastName: u.lastName,
-    email: u.email,
-  }));
+  try {
+    const response = await apiClient.get('/api/v1/Employee/view/paged?page=0&size=1000');
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : (resData?.content || []);
+    return items.map((u: any) => ({
+      id: u.empId || u.id,
+      userId: u.empId || u.id,
+      firstName: u.firstName || '',
+      lastName: u.lastName || '',
+      email: u.email || '',
+    }));
+  } catch {
+    return [];
+  }
 };
 
 export const getUserEmailPreferences = async (userId: string): Promise<UserEmailPreferences> => {
-  const prefs = mockDb.getUserPreferences(Number(userId));
-  return prefs.emailNotifications ? {
-    defectEmailStatus: true,
-    projectAllocationEmailStatus: true,
-    moduleAllocationEmailStatus: true,
-    submoduleAllocationEmailStatus: true,
-  } : {
-    defectEmailStatus: false,
-    projectAllocationEmailStatus: false,
-    moduleAllocationEmailStatus: false,
-    submoduleAllocationEmailStatus: false,
-  };
+  try {
+    const response = await apiClient.get(`/api/v1/user-based-preferences/${userId}`);
+    const resData = response.data?.data || response.data;
+    return {
+      defectEmailStatus: Boolean(resData?.defectEmailStatus ?? true),
+      projectAllocationEmailStatus: Boolean(resData?.projectAllocationEmailStatus ?? true),
+      moduleAllocationEmailStatus: Boolean(resData?.moduleAllocationEmailStatus ?? true),
+      submoduleAllocationEmailStatus: Boolean(resData?.submoduleAllocationEmailStatus ?? true),
+    };
+  } catch {
+    return {
+      defectEmailStatus: true,
+      projectAllocationEmailStatus: true,
+      moduleAllocationEmailStatus: true,
+      submoduleAllocationEmailStatus: true,
+    };
+  }
 };
 
 export const updateUserEmailPreferences = async (
   userId: string,
   preferences: UserEmailPreferences
 ): Promise<ApiResponse<UserEmailPreferences>> => {
-  mockDb.updateUserPreferences(Number(userId), {
-    emailNotifications: preferences.defectEmailStatus,
-  });
+  try {
+    await apiClient.post('/api/v1/user-based-preferences', {
+      userId: Number(userId),
+      ...preferences,
+    });
+  } catch {
+    // Ignore error
+  }
 
   return {
     status: 'success',
@@ -170,11 +241,22 @@ export const updateAllNotificationRules = async (rules: NotificationRule[]): Pro
 };
 
 export const getAvailableRoles = async (): Promise<{ id: string; name: string; description: string }[]> => {
-  return [
-    { id: 'admin', name: 'Admin', description: 'Full system access' },
-    { id: 'project_manager', name: 'Project Manager', description: 'Manage projects' },
-    { id: 'team_lead', name: 'Team Lead', description: 'Lead development team' },
-    { id: 'developer', name: 'Developer', description: 'Development' },
-    { id: 'tester', name: 'Tester', description: 'Quality assurance' },
-  ];
+  try {
+    const response = await apiClient.get('/api/v1/Role/');
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+    return items.map((r: any) => ({
+      id: String(r.id),
+      name: r.roleName || r.name,
+      description: r.description || r.roleType || '',
+    }));
+  } catch {
+    return [
+      { id: 'admin', name: 'Admin', description: 'Full system access' },
+      { id: 'project_manager', name: 'Project Manager', description: 'Manage projects' },
+      { id: 'team_lead', name: 'Team Lead', description: 'Lead development team' },
+      { id: 'developer', name: 'Developer', description: 'Development' },
+      { id: 'tester', name: 'Tester', description: 'Quality assurance' },
+    ];
+  }
 };

@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export interface UserFilter {
   id: number;
@@ -15,26 +15,38 @@ export interface UserFilter {
 export async function getUsersByFilter(
   gender?: string,
   status?: string,
-  designationId?: number,
+  designation?: string,
   page: number = 1,
   size: number = 10
 ) {
-  let users = mockDb.getUsers();
+  try {
+    const params = new URLSearchParams();
+    if (gender) params.append('gender', gender);
+    if (status) params.append('status', status);
+    if (designation) params.append('designation', designation);
 
-  if (gender) {
-    users = users.filter(u => u.userGender?.toLowerCase() === gender.toLowerCase());
-  }
-  if (status) {
-    users = users.filter(u => u.userStatus?.toLowerCase() === status.toLowerCase());
-  }
-  if (designationId) {
-    users = users.filter(u => u.designationId === Number(designationId));
-  }
+    const response = await apiClient.get(`/api/v1/Employee/search?${params.toString()}`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
 
-  const start = (page - 1) * size;
-  const paged = users.slice(start, start + size);
+    const mapped = items.map((u: any) => ({
+      id: u.empId || u.id,
+      userId: `EMP${String(u.empId || u.id).padStart(4, '0')}`,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      email: u.email,
+      userGender: u.gender,
+      status: u.status,
+      designationId: u.designationId,
+      designationName: u.designationName,
+    }));
 
-  return paged;
+    const start = (page - 1) * size;
+    return mapped.slice(start, start + size);
+  } catch (err: any) {
+    if (err.response?.status === 404) return [];
+    throw err;
+  }
 }
 
 export const filterUsers = getUsersByFilter;

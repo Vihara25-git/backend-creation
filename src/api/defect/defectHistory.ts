@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export interface DefectHistoryEntry {
   id: number;
@@ -17,22 +17,27 @@ export interface DefectHistoryEntry {
 export async function getDefectHistoryByDefectId(
   defectId: string | number
 ): Promise<DefectHistoryEntry[]> {
-  const def = mockDb.getDefectById(Number(defectId));
-  if (!def || !def.defectHistory) return [];
+  try {
+    const response = await apiClient.get(`/api/v1/defect/${defectId}/history`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
 
-  return def.defectHistory.map((h, idx) => ({
-    id: h.id || idx + 1,
-    defectId: Number(defectId),
-    assignedByName: 'Priya Ramesh',
-    assignedToName: def.assignedToName || 'Karthik Sundaram',
-    previousStatus: idx === 0 ? 'New' : def.defectHistory![idx - 1].status,
-    defectStatus: h.status,
-    name: h.comment || `Status updated to ${h.status}`,
-    defectDate: h.changedAt.split('T')[0],
-    defectTime: h.changedAt.split('T')[1]?.substring(0, 5) || '12:00',
-    createdBy: h.changedBy || 'QA Tester',
-    updatedBy: h.changedBy || 'QA Tester',
-  }));
+    return items.map((h: any, idx: number) => ({
+      id: h.historyId || h.id || idx + 1,
+      defectId: Number(defectId),
+      assignedByName: h.assignedByName || 'QA Tester',
+      assignedToName: h.assignedToName || 'Unassigned',
+      previousStatus: h.previousStatus || 'New',
+      defectStatus: h.currentStatus || h.status || 'Updated',
+      name: h.comment || `Status updated`,
+      defectDate: h.createdAt ? String(h.createdAt).split('T')[0] : '',
+      defectTime: h.createdAt ? String(h.createdAt).split('T')[1]?.substring(0, 5) : '',
+      createdBy: h.createdBy || 'User',
+      updatedBy: h.updatedBy || 'User',
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export const getDefectHistory = getDefectHistoryByDefectId;

@@ -1,11 +1,11 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export const deleteDefectById = async (id: string | number) => {
-  mockDb.deleteDefect(Number(id));
+  const response = await apiClient.delete(`/api/v1/defect/delete/${id}`);
   return {
-    status: 'success',
-    statusCode: 200,
-    message: 'Defect deleted successfully',
+    status: 'Success',
+    statusCode: response.status || 200,
+    message: response.data?.statusMessage || 'Defect deleted successfully',
   };
 };
 

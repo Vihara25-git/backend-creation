@@ -1,7 +1,7 @@
-import { mockDb } from '../../mock/mockData';
+import apiClient from '../../lib/api';
 
 export interface CreateCommentRequest {
-  userId: string | number;
+  userId?: string | number;
   defectId: string | number;
   comment: string;
   attachment?: string | null;
@@ -15,22 +15,44 @@ export interface CreateCommentResponse {
 }
 
 export const createComment = async (payload: CreateCommentRequest): Promise<CreateCommentResponse> => {
-  const user = mockDb.getUserById(Number(payload.userId));
-  const newComment = mockDb.addDefectComment(Number(payload.defectId), payload.comment, user);
+  const response = await apiClient.post(`/api/v1/defect/${payload.defectId}/comment`, {
+    comment: payload.comment,
+  });
 
   return {
     status: 'success',
-    statusCode: 200,
+    statusCode: response.status || 200,
     message: 'Comment added successfully',
-    data: newComment,
+    data: response.data?.data || response.data,
   };
 };
 
-export const updateComment = async (commentId: number, comment: string) => {
+export const updateComment = async (commentId: number, comment: string, defectId?: number | string) => {
+  if (defectId) {
+    const response = await apiClient.put(`/api/v1/defect/${defectId}/comment/${commentId}`, {
+      comment,
+    });
+    return {
+      status: 'success',
+      statusCode: response.status || 200,
+      message: 'Comment updated successfully',
+      data: response.data?.data || response.data,
+    };
+  }
   return {
     status: 'success',
     statusCode: 200,
     message: 'Comment updated successfully',
     data: { id: commentId, comment },
+  };
+};
+
+export const deleteComment = async (defectId: number | string, commentId: number | string) => {
+  const response = await apiClient.delete(`/api/v1/defect/${defectId}/comment/${commentId}`);
+  return {
+    status: 'success',
+    statusCode: response.status || 200,
+    message: 'Comment deleted successfully',
+    data: response.data?.data || response.data,
   };
 };

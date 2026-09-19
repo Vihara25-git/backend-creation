@@ -42,7 +42,7 @@ const BASE_URL = import.meta.env.VITE_BASE_URL;
 
 import QuickAddTestCase from "./QuickAddTestCase";
 import { useApp } from "../context/AppContext";
-import { mockDb } from "../mock/mockData";
+import apiClient from "../lib/api";
 import { importTestCases } from "../api/importTestCase";
 import { useAccessibleProjects } from "../api/useAccessibleProjects";
 import { usePermission } from "../context/PermissionContext";
@@ -97,19 +97,32 @@ export const TestCase: React.FC = () => {
       { id: string; name: string; submodules: { id: string; name: string }[] }[]
     >
   >({});
-  const fetchAllTestCasesForProject = async (_projId: string) => {
+  const fetchAllTestCasesForProject = async (projId: string) => {
     try {
-      const testCases = mockDb.getTestCases();
-      const merged = testCases.map((tc: any) => ({
-        ...tc,
-        id: tc.id,
-        no: tc.testcaseNo || tc.no,
-        testCaseId: tc.id,
-        description: tc.description,
-        expectedResult: tc.expectedResult,
-        severity: tc.severityName || tc.severity,
-        defectType: tc.defectTypeName || tc.type,
-      }));
+      const pId = projId || selectedProjectId;
+      if (!pId) return;
+      const res = await apiClient.get(`/api/v1/project/${pId}/filter`);
+      const testCases = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      const merged = testCases.map((tc: any) => {
+        const typeName = tc.defectTypeName || tc.type || tc.defectType || "";
+        const tcNum = tc.testCaseNumber ? `TC-${tc.testCaseNumber}` : (tc.testcaseNo || tc.no || `TC-${tc.testCaseId || tc.id}`);
+        return {
+          ...tc,
+          id: tc.testCaseId || tc.id,
+          no: tcNum,
+          testcaseNo: tcNum,
+          testCaseId: tc.testCaseId || tc.id,
+          description: tc.description,
+          detailsSteps: tc.testSteps || tc.steps || tc.detailsSteps || "",
+          steps: tc.testSteps || tc.steps || tc.detailsSteps || "",
+          expectedResult: tc.expectedResult || '',
+          severity: tc.severityName || tc.severity || "",
+          severityName: tc.severityName || tc.severity || "",
+          defectType: typeName,
+          defectTypeName: typeName,
+          type: typeName,
+        };
+      });
 
       const sorted = sortTestCasesByNo(merged as any);
       setAllModuleTestCases(sorted);
@@ -361,20 +374,32 @@ export const TestCase: React.FC = () => {
       );
 
       results.forEach(({ submoduleId, testCases }) => {
-        const mappedList = (testCases as any[]).map((tc: any) => ({
-          ...tc,
-          moduleId: tc.moduleId, // always keep the ID
-          module: moduleMap[tc.moduleId] || tc.moduleName || tc.module, // display name
-          subModuleId: tc.subModuleId, // always keep the ID
-          subModule:
-            submoduleMap[tc.subModuleId] || tc.subModuleName || tc.subModule, // display name
-          severity: ((severities &&
-            severities.find((s) => s.id === tc.severityId)?.name) ||
-            "") as TestCaseType["severity"],
-          type: ((defectTypes &&
-            defectTypes.find((dt) => dt.id === tc.defectTypeId)?.name) ||
-            "") as TestCaseType["type"],
-        })) as TestCaseType[];
+        const mappedList = (testCases as any[]).map((tc: any) => {
+          const typeVal =
+            tc.defectTypeName ||
+            tc.type ||
+            tc.defectType ||
+            (defectTypes && defectTypes.find((dt) => String(dt.id) === String(tc.defectTypeId))?.name) ||
+            "";
+          return {
+            ...tc,
+            no: tc.no || tc.testcaseNo,
+            testcaseNo: tc.testcaseNo || tc.no,
+            moduleId: tc.moduleId, // always keep the ID
+            module: moduleMap[tc.moduleId] || tc.moduleName || tc.module, // display name
+            subModuleId: tc.subModuleId, // always keep the ID
+            subModule:
+              submoduleMap[tc.subModuleId] || tc.subModuleName || tc.subModule, // display name
+            severity: ((severities &&
+              severities.find((s) => String(s.id) === String(tc.severityId))?.name) ||
+              tc.severityName ||
+              tc.severity ||
+              "") as TestCaseType["severity"],
+            type: typeVal as TestCaseType["type"],
+            defectType: typeVal,
+            defectTypeName: typeVal,
+          };
+        }) as TestCaseType[];
 
         
         (mappedList as any).totalPages = (testCases as any).totalPages;
@@ -950,8 +975,8 @@ export const TestCase: React.FC = () => {
         description: formData.description,
         detailsSteps: formData.steps,
         subModuleId: Number(formData.subModuleId),
-        moduleId: Number(formData.moduleId),
-        projectId: Number(formData.projectId),
+        moduleId: Number(formData.moduleId || selectedModuleId),
+        projectId: Number(formData.projectId || selectedProjectId),
         ...(typeof severityId === "number" && { severityId }),
         ...(typeof defectTypeId === "number" && { defectTypeId }),
       };
@@ -1016,14 +1041,22 @@ export const TestCase: React.FC = () => {
       detailsSteps: formData.steps,
       severityId,
       defectTypeId,
+      projectId: Number(selectedProjectId || formData.projectId),
+      moduleId: Number(formData.moduleId || selectedModuleId),
     };
 
     try {
       const response = await createTestCaseSub(subModuleId, payload);
-      if (response?.statusCode === 201 || response?.status === "Created") {
+      if (
+        response?.statusCode === 201 ||
+        response?.statusCode === 200 ||
+        response?.status === "Created" ||
+        response?.status === "success" ||
+        response?.status === "Success"
+      ) {
         setCreateAlert({
           isOpen: true,
-          message: response?.statusMessage || "Test case created successfully!",
+          message: response?.statusMessage || (response as any)?.message || "Test case created successfully!",
         });
 
       if (selectedModuleId) {
@@ -1097,6 +1130,18 @@ export const TestCase: React.FC = () => {
 
     if (testCase.testcaseNo) {
       return testCase.testcaseNo;
+    }
+    if (testCase.no) {
+      return testCase.no;
+    }
+    if ((testCase as any).testCaseNumber) {
+      return `TC-${(testCase as any).testCaseNumber}`;
+    }
+    if (testCase.id) {
+      return `TC-${testCase.id}`;
+    }
+    if ((testCase as any).testCaseId) {
+      return `TC-${(testCase as any).testCaseId}`;
     }
 
     return "N/A";
@@ -1303,7 +1348,12 @@ export const TestCase: React.FC = () => {
   ) => {
     console.log("Deleting test case:", { testCaseId, subModuleId });
     try {
-      const response = await deleteTestCase(subModuleId, testCaseId);
+      const response = await deleteTestCase(
+        subModuleId,
+        testCaseId,
+        Number(selectedProjectId || 1),
+        Number(selectedModuleId || 1)
+      );
       console.log("Delete response:", response);
       return response;
     } catch (error: any) {
@@ -1408,23 +1458,35 @@ export const TestCase: React.FC = () => {
         );
       }
 
-      const mappedTestCases = (responseArr as any[]).map((tc: any) => ({
-        ...tc,
-        id: tc.id,
-        no: tc.no,
-        testCaseId: tc.id,
-        moduleId: tc.moduleId,
-        module: tc.moduleName || tc.module,
-        subModuleId: tc.subModuleId,
-        subModule: tc.subModuleName || tc.subModule,
-        steps: tc.detailsSteps,
-        severity: ((severities || []).find((s) => s.id === tc.severityId)?.name ||
-          tc.severityName ||
-          "") as TestCaseType["severity"],
-        type: ((defectTypes || []).find((dt) => dt.id === tc.defectTypeId)?.name ||
+      const mappedTestCases = (responseArr as any[]).map((tc: any) => {
+        const typeVal =
           tc.defectTypeName ||
-          "") as TestCaseType["type"],
-      })) as TestCaseType[];
+          tc.type ||
+          tc.defectType ||
+          (defectTypes || []).find((dt) => String(dt.id) === String(tc.defectTypeId))?.name ||
+          "";
+        return {
+          ...tc,
+          id: tc.id,
+          no: tc.no || tc.testcaseNo,
+          testcaseNo: tc.testcaseNo || tc.no,
+          testCaseId: tc.id,
+          moduleId: tc.moduleId,
+          module: tc.moduleName || tc.module,
+          subModuleId: tc.subModuleId,
+          subModule: tc.subModuleName || tc.subModule,
+          detailsSteps: tc.detailsSteps || tc.steps || "",
+          steps: tc.detailsSteps || tc.steps || "",
+          severity: ((severities || []).find((s) => String(s.id) === String(tc.severityId))?.name ||
+            tc.severityName ||
+            tc.severity ||
+            "") as TestCaseType["severity"],
+          severityName: tc.severityName || tc.severity || "",
+          type: typeVal as TestCaseType["type"],
+          defectType: typeVal,
+          defectTypeName: typeVal,
+        };
+      }) as TestCaseType[];
 
       
       const sorted = sortTestCasesByNo(mappedTestCases);
@@ -1474,10 +1536,12 @@ export const TestCase: React.FC = () => {
 
     setIsExporting(true);
     try {
-      const testCasesList = mockDb.getTestCases();
+      const pId = selectedProjectId || '1';
+      const res = await apiClient.get(`/api/v1/project/${pId}/filter`);
+      const testCasesList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
       const headers = ["Test Case No", "Description", "Severity", "Defect Type", "Module", "Submodule"];
-      const rows = testCasesList.map(t => [
-        t.testcaseNo,
+      const rows = testCasesList.map((t: any) => [
+        t.testCaseNumber ? `TC-${t.testCaseNumber}` : (t.testcaseNo || t.no || ''),
         `"${(t.description || '').replace(/"/g, '""')}"`,
         t.severityName || 'Medium',
         t.defectTypeName || 'Functional Bug',
@@ -1528,6 +1592,28 @@ export const TestCase: React.FC = () => {
         {/* Filter Options Above Table */}
         {selectedProjectId && (
           <div className="flex justify-end gap-2 mb-2 py-5 ">
+            {can.testCase.create && (
+              <button
+                type="button"
+                className="flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded shadow font-medium"
+                onClick={() => {
+                  const currentMod = projectModules.find((m: any) => String(m.id) === String(selectedModuleId));
+                  const currentSub = currentMod?.submodules?.find((s: any) => String(s.id) === String(selectedSubmoduleId));
+                  setFormData({
+                    ...defaultFormData,
+                    projectId: selectedProjectId,
+                    moduleId: selectedModuleId || (projectModules.length > 0 ? projectModules[0].id : undefined),
+                    module: currentMod?.name || (projectModules.length > 0 ? projectModules[0].name : ""),
+                    subModuleId: selectedSubmoduleId || (currentMod?.submodules?.length ? currentMod.submodules[0].id : ""),
+                    subModule: currentSub?.name || (currentMod?.submodules?.length ? currentMod.submodules[0].name : ""),
+                  });
+                  setIsModalOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Test Case
+              </button>
+            )}
             {can.testCase.create && (
               <button
                 type="button"
@@ -1832,16 +1918,13 @@ export const TestCase: React.FC = () => {
                       params.append("size", "100000");
 
                       
-                      let raw = mockDb.getTestCases(selectedSubmoduleId ? Number(selectedSubmoduleId) : undefined);
-                      if (searchFilters.description) {
-                        const term = searchFilters.description.toLowerCase();
-                        raw = raw.filter(tc => (tc.description || '').toLowerCase().includes(term));
-                      }
-                      if (searchFilters.typeId) {
-                        raw = raw.filter(tc => tc.defectTypeId === Number(searchFilters.typeId));
-                      }
-                      if (searchFilters.severityId) {
-                        raw = raw.filter(tc => tc.severityId === Number(searchFilters.severityId));
+                      let raw: any[] = [];
+                      try {
+                        const pId = selectedProjectId || '1';
+                        const filterRes = await apiClient.get(`/api/v1/project/${pId}/filter?${params.toString()}`);
+                        raw = Array.isArray(filterRes.data) ? filterRes.data : (filterRes.data?.data || []);
+                      } catch {
+                        raw = [];
                       }
 
                       const normalized = raw.map((tc: any) => {
@@ -2154,12 +2237,17 @@ export const TestCase: React.FC = () => {
                           className="hover:bg-gray-50"
                         >
                           {}
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <td
+                            className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 hover:text-blue-800 cursor-pointer"
+                            onClick={() => handleViewTestCase(testCase)}
+                            title="Click to view details"
+                          >
                             {testCase ? formatTestCaseId(testCase) : "N/A"}
                           </td>
                           <td
-                            className="px-6 py-4 text-sm text-gray-500 max-w-xs description-cell"
+                            className="px-6 py-4 text-sm text-gray-500 max-w-xs description-cell cursor-pointer hover:text-gray-900"
                             title={testCase.description}
+                            onClick={() => handleViewTestCase(testCase)}
                           >
                             <div className="description-text">
                               {testCase.description}
@@ -2167,16 +2255,20 @@ export const TestCase: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-500">
                             <button
-                              onClick={() => handleViewSteps(testCase)}
+                              onClick={() => handleViewTestCase(testCase)}
                               className="text-blue-600 hover:text-blue-800 flex items-center space-x-1"
-                              title="View Steps"
+                              title="View Details"
                             >
                               <Eye className="w-4 h-4" />
                               <span>View</span>
                             </button>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {testCase.type}
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">
+                            {testCase.type ||
+                              testCase.defectTypeName ||
+                              (testCase as any).defectType ||
+                              (testCase.defectTypeId ? getTypeName(testCase.defectTypeId) : "") ||
+                              "-"}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {renderColoredSpan(
@@ -2386,19 +2478,69 @@ export const TestCase: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Module
                 </label>
-                <div className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 border border-gray-300">
-                  {}
-                  {formData.module}
-                </div>
+                {isEditMode ? (
+                  <div className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 border border-gray-300">
+                    {formData.module || "Unknown Module"}
+                  </div>
+                ) : (
+                  <select
+                    value={formData.moduleId || ""}
+                    onChange={(e) => {
+                      const modId = e.target.value;
+                      const selectedMod = projectModules.find((m) => String(m.id) === String(modId));
+                      setFormData((prev) => ({
+                        ...prev,
+                        moduleId: modId,
+                        module: selectedMod?.name || "",
+                        subModuleId: "",
+                        subModule: "",
+                      }));
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  >
+                    <option value="">Select Module</option>
+                    {projectModules.map((mod) => (
+                      <option key={mod.id} value={mod.id}>
+                        {mod.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Sub Module
                 </label>
-                <div className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 border border-gray-300">
-                  {}
-                  {formData.subModule || "-"}
-                </div>
+                {isEditMode ? (
+                  <div className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-800 border border-gray-300">
+                    {formData.subModule || "-"}
+                  </div>
+                ) : (
+                  <select
+                    value={formData.subModuleId || ""}
+                    onChange={(e) => {
+                      const subId = e.target.value;
+                      const selectedMod = projectModules.find((m) => String(m.id) === String(formData.moduleId));
+                      const selectedSub = selectedMod?.submodules.find((s: any) => String(s.id) === String(subId));
+                      setFormData((prev) => ({
+                        ...prev,
+                        subModuleId: subId,
+                        subModule: selectedSub?.name || "",
+                      }));
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    disabled={!formData.moduleId}
+                    required
+                  >
+                    <option value="">Select Submodule</option>
+                    {(projectModules.find((m) => String(m.id) === String(formData.moduleId))?.submodules || []).map((sm: any) => (
+                      <option key={sm.id} value={sm.id}>
+                        {sm.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -2549,7 +2691,7 @@ export const TestCase: React.FC = () => {
           setIsViewStepsModalOpen(false);
           setViewingTestCase(null);
         }}
-        title={`Test Step - ${viewingTestCase?.testcaseNo ? (viewingTestCase.testcaseNo) : "N/A"}`}
+        title={`Test Step - ${viewingTestCase ? formatTestCaseId(viewingTestCase) : "N/A"}`}
       >
         <div className="space-y-4">
           <div className="bg-gray-50 rounded-lg p-4">
@@ -2579,7 +2721,7 @@ export const TestCase: React.FC = () => {
           setIsViewTestCaseModalOpen(false);
           setViewingTestCase(null);
         }}
-        title={`Test Case Details - ${(viewingTestCase?.testcaseNo)}`}
+        title={`Test Case Details - ${viewingTestCase ? formatTestCaseId(viewingTestCase) : "N/A"}`}
         size="xl"
       >
         {viewingTestCase && (
@@ -2605,6 +2747,16 @@ export const TestCase: React.FC = () => {
               </div>
             </div>
             <div className="grid grid-cols-3 gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-gray-500">Defect Type</h3>
+                <p className="mt-1 text-sm font-medium text-gray-900">
+                  {viewingTestCase.type ||
+                    viewingTestCase.defectTypeName ||
+                    (viewingTestCase as any).defectType ||
+                    (viewingTestCase.defectTypeId ? getTypeName(viewingTestCase.defectTypeId) : "") ||
+                    "-"}
+                </p>
+              </div>
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Severity</h3>
                 <div className="mt-1">
@@ -2717,11 +2869,11 @@ export const TestCase: React.FC = () => {
               <button
                 className="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-2 rounded"
                 onClick={async () => {
-                  if (pendingDeleteId && pendingDeleteSubModuleId) {
+                  if (pendingDeleteId) {
                     try {
                       await handleDeleteTestCase(
                         pendingDeleteId,
-                        pendingDeleteSubModuleId,
+                        pendingDeleteSubModuleId || 0,
                       );
                       setDeleteAlert({
                         isOpen: true,
@@ -2762,7 +2914,9 @@ export const TestCase: React.FC = () => {
                       setDeleteAlert({
                         isOpen: true,
                         message:
-                          "Cannot delete test case: There are dependencies (e.g., allocated to a release).",
+                          error?.response?.data?.message ||
+                          error?.message ||
+                          "Cannot delete test case: There are dependencies (e.g., allocated to a release or linked to a defect).",
                       });
                     } finally {
                       setConfirmOpen(false);

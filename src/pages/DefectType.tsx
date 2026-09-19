@@ -68,20 +68,21 @@ useEffect(() => {
   const resetForm = () => setFormData({ name: '' });
 
   const handleCreate = async () => {
-  const v = validateForm();
-  if (!v.isValid) { showToast(v.message, 'error'); return; }
-  const exists = defectTypes.some(res => res.name.trim().toLowerCase() === formData.name.trim().toLowerCase());
-  if (exists) { showToast('Defect Type already exists', 'error'); return; }
-  try {
-    await createDefectType({ name: formData.name.trim() });
-    showToast('Defect Type created successfully!', 'success');
-    setIsCreateModalOpen(false);
-    resetForm();
-    await fetchDefectTypes(0,pageSize);
-  } catch {
-    showToast('Failed to create Defect Type', 'error');
-  }
-};
+    const v = validateForm();
+    if (!v.isValid) { showToast(v.message, 'error'); return; }
+    const exists = defectTypes.some(res => res.name.trim().toLowerCase() === formData.name.trim().toLowerCase());
+    if (exists) { showToast('Defect Type already exists', 'error'); return; }
+    try {
+      const res = await createDefectType({ name: formData.name.trim() });
+      showToast(res?.statusMessage || res?.message || 'Defect Type created successfully!', 'success');
+      setIsCreateModalOpen(false);
+      resetForm();
+      await fetchDefectTypes(0, pageSize);
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.statusMessage || error?.response?.data?.message || 'Failed to create Defect Type';
+      showToast(errorMsg, 'error');
+    }
+  };
 
 
   
@@ -92,24 +93,26 @@ useEffect(() => {
   
   
 
-    const handleEdit = async () => {
-  if (!editingDefectType) return;
-  if (formData.name.trim() === editingDefectType.name.trim()) { showToast('No changes were made to the Defect Type', 'error'); return; }
-  const v = validateForm();
-  if (!v.isValid) { showToast(v.message, 'error'); return; }
-  const exists = defectTypes.some(r => r.name.trim().toLowerCase() === formData.name.trim().toLowerCase() && r.id !== editingDefectType.id);
-  if (exists) { showToast('Defect Type already exists', 'error'); return; }
-  try {
-    await updateDefectType(editingDefectType.id, { name: formData.name.trim() });
-    setDefectTypes(prev => prev.map(dt => dt.id === editingDefectType.id ? { ...dt, name: formData.name.trim() } : dt));
-    showToast('Defect Type updated successfully!', 'success');
-    setIsEditModalOpen(false);
-    setEditingDefectType(null);
-    resetForm();
-  } catch {
-    showToast('Failed to update Defect Type', 'error');
-  }
-};
+  const handleEdit = async () => {
+    if (!editingDefectType) return;
+    if (formData.name.trim() === editingDefectType.name.trim()) { showToast('No changes were made to the Defect Type', 'error'); return; }
+    const v = validateForm();
+    if (!v.isValid) { showToast(v.message, 'error'); return; }
+    const exists = defectTypes.some(r => r.name.trim().toLowerCase() === formData.name.trim().toLowerCase() && r.id !== editingDefectType.id);
+    if (exists) { showToast('Defect Type already exists', 'error'); return; }
+    try {
+      const res = await updateDefectType(editingDefectType.id, { name: formData.name.trim() });
+      setDefectTypes(prev => prev.map(dt => dt.id === editingDefectType.id ? { ...dt, name: formData.name.trim() } : dt));
+      showToast(res?.statusMessage || res?.message || 'Defect Type updated successfully!', 'success');
+      setIsEditModalOpen(false);
+      setEditingDefectType(null);
+      resetForm();
+      await fetchDefectTypes(currentPage - 1, pageSize);
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.statusMessage || error?.response?.data?.message || 'Failed to update Defect Type';
+      showToast(errorMsg, 'error');
+    }
+  };
   
   
   
@@ -119,18 +122,19 @@ useEffect(() => {
   
   
 
-    const handleDelete = async () => {
-  if (!deletingDefectType) return;
-  try {
-    await deleteDefectType(deletingDefectType.id);
-    showToast('Defect Type deleted successfully!', 'success');
-    setIsDeleteModalOpen(false);
-    setDeletingDefectType(null);
-    await fetchDefectTypes(0,pageSize);
-  } catch {
-    showToast('Failed to delete Defect Type', 'error');
-  }
-};
+  const handleDelete = async () => {
+    if (!deletingDefectType) return;
+    try {
+      const res = await deleteDefectType(deletingDefectType.id);
+      showToast(res?.statusMessage || res?.message || 'Defect Type deleted successfully!', 'success');
+      setIsDeleteModalOpen(false);
+      setDeletingDefectType(null);
+      await fetchDefectTypes(0, pageSize);
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.statusMessage || error?.response?.data?.message || 'Failed to delete Defect Type';
+      showToast(errorMsg, 'error');
+    }
+  };
 
   
   

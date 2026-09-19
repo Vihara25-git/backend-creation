@@ -1,12 +1,13 @@
-import { mockDb } from '../../mock/mockData';
+import apiClient from '../../lib/api';
 
-interface Comment {
+export interface Comment {
   id: number;
   comment: string;
-  userId: number | string;
-  defectId: number | string;
+  userId?: number | string;
+  defectId?: number | string;
   attachment?: string | null;
-  createdAt: string;
+  createdAt?: string;
+  createdByName?: string;
 }
 
 export interface GetCommentsResponse {
@@ -17,20 +18,31 @@ export interface GetCommentsResponse {
 }
 
 export const getCommentsByDefectId = async (defectId: number | string): Promise<GetCommentsResponse> => {
-  const def = mockDb.getDefectById(Number(defectId));
-  const comments = def?.comments || [];
+  try {
+    const response = await apiClient.get(`/api/v1/defect/${defectId}/comment`);
+    const resData = response.data?.data || response.data;
+    const comments = Array.isArray(resData) ? resData : [];
 
-  return {
-    status: 'success',
-    statusCode: 200,
-    message: 'Comments fetched successfully',
-    data: comments.map(c => ({
-      id: c.id,
-      comment: c.comment,
-      userId: c.userId,
-      defectId: c.defectId,
-      attachment: null,
-      createdAt: c.createdAt,
-    })),
-  };
+    return {
+      status: 'success',
+      statusCode: response.status || 200,
+      message: 'Comments fetched successfully',
+      data: comments.map((c: any) => ({
+        id: c.id || c.commentId,
+        comment: c.comment || '',
+        userId: c.createdBy,
+        defectId: Number(defectId),
+        attachment: null,
+        createdAt: c.createdAt || new Date().toISOString(),
+        createdByName: c.createdByName || '',
+      })),
+    };
+  } catch (error: any) {
+    return {
+      status: 'error',
+      statusCode: error.response?.status || 500,
+      message: error.response?.data?.message || 'Failed to fetch comments',
+      data: [],
+    };
+  }
 };

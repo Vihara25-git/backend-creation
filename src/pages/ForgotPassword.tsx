@@ -30,15 +30,25 @@ const ForgotPassword: React.FC = () => {
       const response = await forgotPassword(email);
       console.log("Forgot password response:", response);
       
-      if (response.status === 'Success') {
+      if (response.status === 'Success' || response.status?.toLowerCase() === 'success' || response.statusCode === 200) {
         setStep('Success');
-        setMessage(response.data?.message)
+        setMessage(response.data?.message || response.statusMessage || 'Password reset link has been sent to your email.');
       } else {
-        setError(response.statusMessage || 'Failed to send OTP. Please try again.');
+        setError(response.statusMessage || 'Failed to send reset link. Please try again.');
       }
     } catch (err: any) {
       console.error('Forgot password error:', err);
-      setError(err.response?.data?.message || 'Failed to send OTP. Please try again.');
+      let errorMsg = 'Failed to send reset link. Please try again.';
+      if (err.response?.data?.message) {
+        errorMsg = err.response.data.message;
+      } else if (err.response?.data?.statusMessage) {
+        errorMsg = err.response.data.statusMessage;
+      } else if (Array.isArray(err.response?.data?.data) && err.response.data.data[0]?.message) {
+        errorMsg = err.response.data.data[0].message;
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }

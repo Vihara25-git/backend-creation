@@ -1,12 +1,11 @@
-
 import React, { useState, useEffect } from "react";
 import { Button } from "../components/ui/Button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/Select";
 import { Users, Bell, Search, Loader2, Save, CheckCircle, AlertCircle, Mail, Shield, MessageCircle, Smartphone, XCircle, Zap, Lock } from "lucide-react";
 import { SimpleUser, ToastState } from "../types/emailConfiguration";
-import { getAllEmailPointSetups, updateUserExtraPoints } from "../services/emailConfigurationApi";
+import { getAllEmailPointSetups, updateUserExtraPoints, getUserNotificationChannels, getRoleNotificationChannels } from "../services/emailConfigurationApi";
 import { getAllUsersSimple } from "../api/users/getallusers";
-import { getViewAllocations } from "../api/bench/projectAllocation";
+import apiClient from "../lib/api";
 import { usePermission } from "../context/PermissionContext";
 
 type NotificationChannel = 'none' | 'whatsapp' | 'email' | 'both';
@@ -21,7 +20,7 @@ export const UserPreferencesTab: React.FC = () => {
   const [originalExtraPoints, setOriginalExtraPoints] = useState<Map<number, NotificationChannel>>(new Map());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchEventTerm, setSearchEventTerm] = useState("");
   const [userRoles, setUserRoles] = useState<{ id: number; name: string }[]>([]);
   const [toast, setToast] = useState<ToastState>({
     show: false,
@@ -32,13 +31,7 @@ export const UserPreferencesTab: React.FC = () => {
   const { can } = usePermission();
   const canAssign = can.employeeEmailRecipient?.assign;
 
-  
-  const IGNORED_TEMPLATES: string[] = [
-    "EMPLOYEE_CREATED",
-    "PASSWORD_RESET"
-  ];
-
-  
+  const IGNORED_TEMPLATES: string[] = [];
   const DISABLED_TEMPLATES: string[] = [];
 
   useEffect(() => {
@@ -47,16 +40,24 @@ export const UserPreferencesTab: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedUser) {
-      loadUserNotificationPoints(selectedUser);
+    if (selectedUser && emailPoints.length > 0) {
+      loadUserNotificationPoints(selectedUser, emailPoints);
+    } else if (!selectedUser) {
+      setUserExtraPoints(new Map());
+      setOriginalExtraPoints(new Map());
+      setRoleBasedPoints(new Set());
+      setRoleBasedChannels(new Map());
+      setUserRoles([]);
     }
-  }, [selectedUser]);
+  }, [selectedUser, emailPoints]);
 
   const loadUsers = async () => {
     setLoading(true);
     try {
       const data = await getAllUsersSimple();
-      const userList = Array.isArray(data?.data?.content) ? data.data.content : [];
+      const userList = Array.isArray(data?.data)
+        ? data.data
+        : (Array.isArray(data?.data?.content) ? data.data.content : (Array.isArray(data) ? data : []));
       setUsers(userList);
     } catch (error) {
       console.error("Error loading users:", error);
@@ -74,45 +75,80 @@ export const UserPreferencesTab: React.FC = () => {
         return !IGNORED_TEMPLATES.includes(point.eventType);
       });
       setEmailPoints(filteredPoints);
+      return filteredPoints;
     } catch {
       showToast("Failed to load email points", "error");
+      return [];
     }
   };
 
-  const loadUserNotificationPoints = async (user: SimpleUser) => {
+  const loadUserNotificationPoints = async (user: SimpleUser, currentPoints = emailPoints) => {
     setLoading(true);
     try {
-      
-      const allocationsResponse = await getViewAllocations(user.id);
-      const allocations = allocationsResponse?.data?.availablePeriods || [];
-      
-      const roles = [...new Map(allocations.map((alloc: any) => [alloc.roleId, alloc.roleName])).entries()]
-        .filter(([id]) => id)
-        .map(([id, name]) => ({ id: Number(id), name }));
-      
+      // 1. Get user's assigned roles from bench allocations
+      let roles: { id: number; name: string }[] = [];
+      try {
+        const allocResponse = await apiClient.get('/api/v1/bench-allocation?page=0&size=1000');
+        const allocData = allocResponse.data?.data || allocResponse.data;
+        const allocItems = Array.isArray(allocData) ? allocData : (allocData?.content || []);
+        const userAllocs = allocItems.filter((a: any) => String(a.empId || a.employeeId) === String(user.id));
+        
+        const roleMap = new Map<number, string>();
+        userAllocs.forEach((a: any) => {
+          if (a.roleId && a.roleName) {
+            roleMap.set(Number(a.roleId), a.roleName);
+          }
+        });
+
+        // Fallback: if no bench allocations, check user's designation
+        if (roleMap.size === 0 && user.designationId && user.designationName) {
+          roleMap.set(Number(user.designationId), user.designationName);
+        }
+
+        roles = Array.from(roleMap.entries()).map(([id, name]) => ({ id, name }));
+      } catch (err) {
+        console.error("Error fetching user allocations:", err);
+      }
       setUserRoles(roles);
-      
-      
+
+      // 2. Get role-based notification channels from backend
       const allRoleChannels = new Map<number, string>();
       const allRolePoints = new Set<number>();
-      
-      const mockRoleChannels: Record<number, string> = { 1: 'email', 2: 'email', 3: 'in-app', 4: 'email' };
-      Object.entries(mockRoleChannels).forEach(([pointId, channel]) => {
-        const id = Number(pointId);
-        allRolePoints.add(id);
-        allRoleChannels.set(id, channel);
-      });
+
+      for (const role of roles) {
+        try {
+          const channelsMap = await getRoleNotificationChannels(role.id);
+          Object.entries(channelsMap).forEach(([pointId, channel]) => {
+            if (channel && channel !== 'none') {
+              const id = Number(pointId);
+              allRolePoints.add(id);
+              allRoleChannels.set(id, channel);
+            }
+          });
+        } catch (err) {
+          console.error(`Error loading channels for role ${role.id}:`, err);
+        }
+      }
 
       setRoleBasedPoints(allRolePoints);
       setRoleBasedChannels(allRoleChannels);
 
+      // 3. Get user's saved preferences from real backend
+      const userChannels = await getUserNotificationChannels(user.id);
       const extraPointsMap = new Map<number, NotificationChannel>();
-      extraPointsMap.set(1, 'email');
-      extraPointsMap.set(2, 'email');
+
+      currentPoints.forEach(point => {
+        const ptId = Number(point.id);
+        const channel = userChannels[ptId] || userChannels[String(ptId)];
+        if (channel && channel !== 'none') {
+          extraPointsMap.set(ptId, channel as NotificationChannel);
+        } else {
+          extraPointsMap.set(ptId, 'none');
+        }
+      });
 
       setUserExtraPoints(extraPointsMap);
       setOriginalExtraPoints(new Map(extraPointsMap));
-      
     } catch (error) {
       console.error("Error loading user notification points:", error);
       showToast("Failed to load notification settings", "error");
@@ -133,13 +169,19 @@ export const UserPreferencesTab: React.FC = () => {
     
     setUserExtraPoints(prev => {
       const newMap = new Map(prev);
-      if (channel === 'none') {
-        newMap.delete(pointId);
-      } else {
-        newMap.set(pointId, channel);
-      }
+      newMap.set(pointId, channel);
       return newMap;
     });
+  };
+
+  const handleSelectAll = (channel: NotificationChannel) => {
+    const newMap = new Map(userExtraPoints);
+    filteredPoints.forEach(point => {
+      if (!roleBasedPoints.has(point.id)) {
+        newMap.set(point.id, channel);
+      }
+    });
+    setUserExtraPoints(newMap);
   };
 
   const handleSave = async () => {
@@ -162,9 +204,13 @@ export const UserPreferencesTab: React.FC = () => {
   };
 
   const hasChanges = () => {
-    if (userExtraPoints.size !== originalExtraPoints.size) return true;
     for (const [id, channel] of userExtraPoints) {
-      if (originalExtraPoints.get(id) !== channel) return true;
+      const orig = originalExtraPoints.get(id) || 'none';
+      if (orig !== channel) return true;
+    }
+    for (const [id, channel] of originalExtraPoints) {
+      const curr = userExtraPoints.get(id) || 'none';
+      if (curr !== channel) return true;
     }
     return false;
   };
@@ -174,15 +220,8 @@ export const UserPreferencesTab: React.FC = () => {
     setTimeout(() => setToast({ show: false, message: "", type: "success" }), 3000);
   };
 
-  const filteredUsers = users.filter((user) => {
-    const name = `${user.firstName} ${user.lastName}`.toLowerCase();
-    const email = user.email.toLowerCase();
-    const search = searchTerm.toLowerCase();
-    return name.includes(search) || email.includes(search);
-  });
-
   const filteredPoints = emailPoints.filter(point => {
-    const search = searchTerm.toLowerCase();
+    const search = searchEventTerm.toLowerCase();
     const eventLabel = point.eventType?.replaceAll("_", " ") || "";
     return eventLabel.toLowerCase().includes(search) || 
            (point.description || "").toLowerCase().includes(search);
@@ -190,8 +229,6 @@ export const UserPreferencesTab: React.FC = () => {
 
   const getIconForEvent = (eventType: string): string => {
     const iconMap: Record<string, string> = {
-      'EMPLOYEE_ACTIVATED': '✅',
-      'EMPLOYEE_DEACTIVATED': '⛔',
       'PROJECT_CREATED': '📁',
       'PROJECT_ALLOCATION': '🎯',
       'PROJECT_DEALLOCATION': '🚫',
@@ -202,7 +239,18 @@ export const UserPreferencesTab: React.FC = () => {
       'DEFECT_REASSIGNED': '🔄',
       'DEFECT_UPDATED': '✏️',
       'PASSWORD_CHANGED': '🔒',
-      'ACCOUNT_LOCKED': '🔐'
+      'ACCOUNT_LOCKED': '🔐',
+      'EMPLOYEE_ACTIVATED': '✅',
+      'EMPLOYEE_DEACTIVATED': '⛔',
+      'EMPLOYEE_EMAIL_UPDATED': '📧',
+      'MODULE_DEALLOCATION': '📦',
+      'SUBMODULE_DEALLOCATION': '🔧',
+      'QA_TESTCASE_ALLOCATION': '📋',
+      'LOGIN_SUCCESSFUL': '✅',
+      'PASSWORD_RESET_SUCCESS': '🔒',
+      'PROJECT_UPDATED': '📁',
+      'PROJECT_ALLOCATION_UPDATED': '🎯',
+      'PENDING_WORK_EMPLOYEE_REMINDER': '⏰',
     };
     return iconMap[eventType] || '📧';
   };
@@ -221,7 +269,7 @@ export const UserPreferencesTab: React.FC = () => {
   const stats = {
     total: filteredPoints.length,
     roleBased: roleBasedPoints.size,
-    extra: userExtraPoints.size,
+    extra: Array.from(userExtraPoints.values()).filter(c => c !== 'none').length,
     extraEmail: Array.from(userExtraPoints.values()).filter(c => c === 'email' || c === 'both').length,
     extraWhatsapp: Array.from(userExtraPoints.values()).filter(c => c === 'whatsapp' || c === 'both').length,
   };
@@ -243,7 +291,7 @@ export const UserPreferencesTab: React.FC = () => {
         </div>
       )}
 
-      {}
+      {/* Header Banner */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl shadow-sm border border-blue-100 p-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center space-x-4">
@@ -252,7 +300,7 @@ export const UserPreferencesTab: React.FC = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-800">User Notification Preferences</h1>
-              <p className="text-gray-500 mt-1">Configure extra notifications for individual users</p>
+              <p className="text-gray-500 mt-1">Configure notification channels for individual employees</p>
             </div>
           </div>
           <div className="bg-white rounded-xl px-4 py-2 shadow-sm">
@@ -264,16 +312,16 @@ export const UserPreferencesTab: React.FC = () => {
         </div>
       </div>
 
-      {}
+      {/* Search and User Selection Controls */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search users by name or email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search notification events..."
+              value={searchEventTerm}
+              onChange={(e) => setSearchEventTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all bg-gray-50"
             />
           </div>
@@ -286,10 +334,10 @@ export const UserPreferencesTab: React.FC = () => {
               }}
             >
               <SelectTrigger className="bg-gray-50 border-gray-200 rounded-xl h-11">
-                <SelectValue placeholder="Select a user" />
+                <SelectValue placeholder="Select an employee" />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto bg-gray-50">
-                {filteredUsers.map((user) => (
+                {users.map((user) => (
                   <SelectItem key={user.id} value={String(user.id)}>
                     <div className="flex flex-col">
                       <span className="font-medium text-gray-800">{`${user.firstName} ${user.lastName}`}</span>
@@ -303,7 +351,7 @@ export const UserPreferencesTab: React.FC = () => {
         </div>
 
         {selectedUser && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+          <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-center">
               <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 font-semibold text-lg shadow-sm">
                 {selectedUser.firstName?.[0]}{selectedUser.lastName?.[0]}
@@ -322,19 +370,34 @@ export const UserPreferencesTab: React.FC = () => {
                 )}
               </div>
             </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => handleSelectAll('none')} className="border-gray-200 text-gray-600 hover:bg-gray-100">
+                <XCircle className="w-3.5 h-3.5 mr-1" /> None All
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleSelectAll('whatsapp')} className="border-green-200 text-green-600 hover:bg-green-50">
+                <MessageCircle className="w-3.5 h-3.5 mr-1" /> WhatsApp All
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleSelectAll('email')} className="border-blue-200 text-blue-600 hover:bg-blue-50">
+                <Mail className="w-3.5 h-3.5 mr-1" /> Email All
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleSelectAll('both')} className="border-purple-200 text-purple-600 hover:bg-purple-50">
+                <Smartphone className="w-3.5 h-3.5 mr-1" /> Both All
+              </Button>
+            </div>
           </div>
         )}
       </div>
 
-      {}
+      {/* Main Content Area */}
       {!selectedUser ? (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
           <div className="max-w-md mx-auto">
             <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Users className="w-10 h-10 text-blue-400" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">No User Selected</h3>
-            <p className="text-gray-400">Please select a user from the dropdown above to configure notification preferences</p>
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">No Employee Selected</h3>
+            <p className="text-gray-400">Please select an employee from the dropdown above to configure notification preferences</p>
           </div>
         </div>
       ) : loading ? (
@@ -344,7 +407,7 @@ export const UserPreferencesTab: React.FC = () => {
         </div>
       ) : (
         <>
-          {}
+          {/* Stats Badges */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
               <div className="flex items-center justify-between">
@@ -375,7 +438,7 @@ export const UserPreferencesTab: React.FC = () => {
             </div>
           </div>
 
-          {}
+          {/* Events List */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
               <h3 className="font-semibold text-gray-700">Notification Events</h3>
@@ -542,7 +605,7 @@ export const UserPreferencesTab: React.FC = () => {
               )}
             </div>
 
-            {}
+            {/* Bottom Actions */}
             <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-3">
               <div className="text-sm text-gray-500">
                 Role-based: <span className="font-medium text-gray-600">{stats.roleBased}</span> (Auto-assigned) | 

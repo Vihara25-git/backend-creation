@@ -1,15 +1,23 @@
 import { Module } from "../../types/index";
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export const updateModule = async (
-  _projectId: number,
+  projectId: number,
   id: number,
   data: Partial<Module>
-): Promise<{ success: boolean; module?: Module; message?: string }> => {
-  const updated = mockDb.updateModule(id, { name: data.name });
+): Promise<{ success: boolean; status?: string; module?: Module; message?: string }> => {
+  const response = await apiClient.put(`/api/v1/project/${projectId}/module/${id}`, {
+    moduleName: data.name,
+  });
+
   return {
     success: true,
-    module: updated as any,
-    message: 'Module updated successfully',
+    status: 'success',
+    module: {
+      id,
+      name: data.name || '',
+      projectId,
+    } as any,
+    message: response.data?.statusMessage || 'Module updated successfully',
   };
 };

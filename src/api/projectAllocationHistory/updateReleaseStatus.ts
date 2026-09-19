@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export interface UpdateReleaseStatusResponse {
   status: string;
@@ -11,16 +11,27 @@ export interface UpdateReleaseStatusResponse {
   };
 }
 
-export const updateReleaseStatus = async (releaseId: number, status: 'ACTIVE' | 'HOLD'): Promise<UpdateReleaseStatusResponse> => {
-  const updated = mockDb.updateRelease(releaseId, { status, releaseStatus: status });
+export const updateReleaseStatus = async (releaseId: number, status: 'ACTIVE' | 'HOLD' | 'ON_HOLD'): Promise<UpdateReleaseStatusResponse> => {
+  const normalizedStatus = status === 'HOLD' ? 'ON_HOLD' : status;
+
+  await apiClient.patch(
+    `/api/v1/release-test-cases/release/${releaseId}/status`,
+    `"${normalizedStatus}"`,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
   return {
     status: 'success',
     statusCode: 200,
     statusMessage: 'Release status updated successfully',
     data: {
       id: releaseId,
-      name: updated?.name || 'Release',
-      status: status,
+      name: `Release ${releaseId}`,
+      status: normalizedStatus,
     },
   };
 };

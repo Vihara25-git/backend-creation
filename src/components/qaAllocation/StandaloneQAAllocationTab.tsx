@@ -13,7 +13,7 @@ import {
   UserCheck,
   X,
 } from "lucide-react";
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 import { Button } from "../ui/Button";
 import { Card, CardContent } from "../ui/Card";
 import { Toast } from "../ui/Toast";
@@ -127,6 +127,74 @@ const normalizeRoleName = (value: unknown): string =>
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, "_");
+
+export const isQaLeadOrQaEngineer = (item: {
+  roleName?: string;
+  roleType?: string;
+  type?: string;
+  role?: string;
+  userRole?: string;
+  designationName?: string;
+  designation?: string;
+  roleId?: number | string;
+  designationId?: number | string;
+}): boolean => {
+  if (!item) return false;
+
+  const rawRoleName = String(item.roleName || item.role || item.userRole || "").trim().toUpperCase();
+  const rawRoleType = String(item.roleType || item.type || "").trim().toUpperCase();
+  const rawDesig = String(item.designationName || item.designation || "").trim().toUpperCase();
+
+  const normalizedRole = rawRoleName.replace(/[\s-]+/g, "_");
+  const normalizedDesig = rawDesig.replace(/[\s-]+/g, "_");
+
+  // 1. If explicitly assigned a non-QA role (Developer, PM, Dev Lead, etc.), exclude immediately
+  const isNonQaRole =
+    rawRoleName.includes("DEVELOPER") ||
+    rawRoleType.includes("DEVELOPER") ||
+    rawRoleName.includes("DEV_LEAD") ||
+    rawRoleName.includes("DEV LEAD") ||
+    rawRoleName.includes("PROJECT MANAGER") ||
+    rawRoleType === "PROJECT_MANAGER" ||
+    rawRoleName.includes("BUSINESS ANALYST") ||
+    rawRoleName.includes("UI/UX") ||
+    rawRoleName.includes("DEVOPS") ||
+    rawRoleName.includes("CLIENT");
+
+  if (isNonQaRole) return false;
+
+  // 2. Check roleId from project allocation or user (2 = QA Lead, 3 = QA Engineer)
+  // 2. Check roleId from project allocation or user (2 = QA Lead, 3 = QA Engineer)
+  if (item.roleId) {
+    const rId = Number(item.roleId);
+    if (rId === 2 || rId === 3) return true;
+    if (rId === 1 || rId === 4 || rId === 5) return false;
+  }
+
+  // 3. Direct match on QA Lead (roleType, roleName, designation)
+  const isQaLead =
+    rawRoleType === "QA_LEAD" ||
+    normalizedRole === "QA_LEAD" ||
+    rawRoleName === "QA LEAD" ||
+    rawRoleName === "LEAD QA" ||
+    normalizedDesig === "QA_LEAD" ||
+    rawDesig === "QA LEAD" ||
+    rawDesig === "LEAD QA";
+
+  // 4. Direct match on QA Engineer (roleType, roleName, designation)
+  const isQaEngineer =
+    rawRoleType === "QA_ENGINEER" ||
+    normalizedRole === "QA_ENGINEER" ||
+    rawRoleName === "QA ENGINEER" ||
+    normalizedDesig === "QA_ENGINEER" ||
+    rawDesig === "QA ENGINEER";
+
+  if (isQaLead || isQaEngineer) {
+    return true;
+  }
+
+  return false;
+};
 
 const mapProjectAllocationEmployees = (
   allocations: ProjectAllocationEmployee[],
@@ -278,19 +346,24 @@ export const StandaloneQAAllocationTab: React.FC<StandaloneQAAllocationTabProps>
       setMessage(null);
 
       try {
-        const releaseData = mockDb.getReleases(Number(projectIdValue)).map((release) => ({
+        const rRes = await apiClient.get(`/api/v1/ReleaseView/project/${projectIdValue}`);
+        const rList = Array.isArray(rRes.data) ? rRes.data : (rRes.data?.data || []);
+        const releaseData = rList.map((release: any) => ({
           ...release,
-          releaseName: release.name || release.releaseName,
+          id: release.releaseId || release.id,
+          releaseId: release.releaseId || release.id,
+          releaseName: release.releaseName || release.name,
         }));
         setReleases(releaseData);
 
-        const moduleData = mockDb.getModules(Number(projectIdValue));
-        const modulesWithSubmodules = moduleData.map((module) => ({
-          id: module.id,
-          name: module.name || module.moduleName || `Module ${module.id}`,
-          submodules: (module.submodules || []).map((s: any) => ({
-            id: s.id,
-            name: s.name || s.subModuleName || `Submodule ${s.id}`,
+        const mRes = await apiClient.get(`/api/v1/project/${projectIdValue}/module`);
+        const mList = Array.isArray(mRes.data) ? mRes.data : (mRes.data?.data || []);
+        const modulesWithSubmodules = mList.map((module: any) => ({
+          id: module.moduleId || module.id,
+          name: module.moduleName || module.name || `Module ${module.moduleId || module.id}`,
+          submodules: (module.subModules || module.submodules || []).map((s: any) => ({
+            id: s.subModuleId || s.id,
+            name: s.subModuleName || s.name || `Submodule ${s.subModuleId || s.id}`,
           })),
         }));
 
@@ -320,18 +393,40 @@ export const StandaloneQAAllocationTab: React.FC<StandaloneQAAllocationTabProps>
       setQaLoading(true);
 
       try {
-        const qaRoleNames = await roleTypesBasedRoleFetch(["QA_ENGINEER","QA_LEAD"]);
-        const allowedRoles = new Set(qaRoleNames.map(normalizeRoleName));
+        const allocRes = await apiClient.get(`/api/v1/bench-allocation/${projectIdValue}/project`);
+        const activeProjectAllocs = Array.isArray(allocRes.data) ? allocRes.data : (allocRes.data?.data || []);
 
-        const allUsers = mockDb.getUsers();
-        const employees = allUsers.map((u) => ({
-          id: u.id,
-          name: `${u.firstName} ${u.lastName}`,
-          roleName: u.roleName || "Developer",
-        }));
+        const allEmployeesMap = new Map<number, EmployeeOption>();
+        const qaMap = new Map<number, EmployeeOption>();
 
-        setAllocatedEmployees(employees);
-        setQaMembers(employees.filter((employee) => allowedRoles.has(employee.roleName) || employee.roleName.includes("QA")));
+        for (const alloc of activeProjectAllocs) {
+          const empId = Number(alloc.empId || alloc.employeeId);
+          if (!empId) continue;
+          const name = alloc.employeeName || `${alloc.firstName || ''} ${alloc.lastName || ''}`.trim() || `Employee ${empId}`;
+          const roleName = alloc.roleName || "Employee";
+
+          allEmployeesMap.set(empId, { id: empId, name, roleName });
+
+          let isQA = isQaLeadOrQaEngineer(alloc);
+          if (!isQA) {
+            try {
+              const rolesRes = await apiClient.get(`/api/v1/bench-allocation/employee/${empId}/roles`);
+              const rolesList = Array.isArray(rolesRes.data) ? rolesRes.data : (rolesRes.data?.data || []);
+              isQA = rolesList.some((r: any) => isQaLeadOrQaEngineer(r));
+            } catch {
+              // ignore
+            }
+          }
+
+          if (isQA) {
+            const isLead = String(roleName).toUpperCase().includes("LEAD");
+            qaMap.set(empId, { id: empId, name, roleName: isLead ? "QA Lead" : "QA Engineer" });
+          }
+        }
+
+        setAllocatedEmployees(Array.from(allEmployeesMap.values()));
+        const filteredQa = Array.from(qaMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+        setQaMembers(filteredQa);
       } catch (error) {
         setAllocatedEmployees([]);
         setQaMembers([]);
@@ -358,15 +453,17 @@ export const StandaloneQAAllocationTab: React.FC<StandaloneQAAllocationTabProps>
     setMessage(null);
 
     try {
-      const testCases = mockDb.getTestCases();
+      const res = await apiClient.get(`/api/v1/release-test-cases/release/${selectedReleaseId}/test-case`);
+      const testCases = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+
       setAllTestCases(
-        testCases.map((tc) => ({
-          testcaseId: tc.id,
-          testCaseNo: tc.testcaseNo,
-          name: tc.description,
-          moduleId: tc.moduleId || 1,
-          submoduleId: tc.subModuleId || 1,
-          assignedTo: tc.assignedQaId || (tc.id % 2 === 0 ? 2 : null),
+        testCases.map((tc: any) => ({
+          testcaseId: tc.testCaseId || tc.id,
+          testCaseNo: tc.testCaseNumber ? `TC-${tc.testCaseNumber}` : (tc.testcaseNo || tc.no || `TC-${tc.testCaseId || tc.id}`),
+          name: tc.description || tc.name || "Test Case",
+          moduleId: Number(tc.moduleId || 0),
+          submoduleId: Number(tc.subModuleId || 0),
+          assignedTo: tc.assignedEmployeeId || tc.employeeId || tc.assignedQaId || null,
         }))
       );
     } catch (error) {
@@ -392,22 +489,25 @@ export const StandaloneQAAllocationTab: React.FC<StandaloneQAAllocationTabProps>
 
   // Modules that actually have allocated test cases.
   const availableModules = useMemo(() => {
+    if (modules.length === 0) return [];
     const moduleIds = new Set(allTestCases.map((testCase) => testCase.moduleId));
-    return modules.filter((module) => moduleIds.has(Number(module.id)));
+    const matching = modules.filter((module) => moduleIds.has(Number(module.id)));
+    return matching.length > 0 ? matching : modules;
   }, [modules, allTestCases]);
 
   // Submodules with allocated test cases for the selected module.
   const availableSubmodules = useMemo(() => {
-    const selectedModule = modules.find((module) => String(module.id) === selectedModuleId);
+    const selectedModule = modules.find((module) => String(module.id) === String(selectedModuleId));
     if (!selectedModule) return [];
 
     const submoduleIds = new Set(
       allTestCases
-        .filter((testCase) => testCase.moduleId === Number(selectedModuleId))
+        .filter((testCase) => !testCase.moduleId || Number(testCase.moduleId) === Number(selectedModuleId))
         .map((testCase) => testCase.submoduleId),
     );
 
-    return selectedModule.submodules.filter((submodule) => submoduleIds.has(Number(submodule.id)));
+    const matching = (selectedModule.submodules || []).filter((submodule) => submoduleIds.has(Number(submodule.id)));
+    return matching.length > 0 ? matching : (selectedModule.submodules || []);
   }, [modules, allTestCases, selectedModuleId]);
 
   // Employees that currently have test cases assigned (source for "From").
@@ -441,10 +541,10 @@ export const StandaloneQAAllocationTab: React.FC<StandaloneQAAllocationTabProps>
     }
 
     if (selectedModuleId) {
-      base = base.filter((testCase) => testCase.moduleId === Number(selectedModuleId));
+      base = base.filter((testCase) => !testCase.moduleId || Number(testCase.moduleId) === Number(selectedModuleId));
     }
     if (selectedSubmoduleId) {
-      base = base.filter((testCase) => testCase.submoduleId === Number(selectedSubmoduleId));
+      base = base.filter((testCase) => !testCase.submoduleId || Number(testCase.submoduleId) === Number(selectedSubmoduleId));
     }
 
     const search = searchTerm.trim().toLowerCase();
@@ -583,9 +683,19 @@ export const StandaloneQAAllocationTab: React.FC<StandaloneQAAllocationTabProps>
     }
 
     try {
-      selectedTestCaseIds.forEach((id) => {
-        mockDb.updateTestCase(id, { assignedQaId: Number(targetEmployeeId) });
-      });
+      if (selectedReleaseId) {
+        for (const tcId of selectedTestCaseIds) {
+          await apiClient.post(
+            `/api/v1/release-test-cases/release/${selectedReleaseId}/test-case/${tcId}/employee`,
+            { employeeId: Number(targetEmployeeId) }
+          );
+        }
+      }
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("qaAllocationUpdated", { detail: { releaseId: selectedReleaseId } }));
+        window.dispatchEvent(new CustomEvent("releaseTestCaseUpdated", { detail: { releaseId: selectedReleaseId } }));
+      }
 
       showToast("success", successText);
       setSelectedTestCaseIds([]);
@@ -784,7 +894,7 @@ export const StandaloneQAAllocationTab: React.FC<StandaloneQAAllocationTabProps>
                     <option value="">Choose source QA</option>
                     {fromEmployees.map((employee) => (
                       <option key={employee.id} value={String(employee.id)}>
-                        {employee.name}
+                        {employee.name}{employee.roleName ? ` (${employee.roleName})` : ""}
                       </option>
                     ))}
                   </select>
@@ -803,7 +913,7 @@ export const StandaloneQAAllocationTab: React.FC<StandaloneQAAllocationTabProps>
                       .filter((member) => String(member.id) !== fromEmployeeId)
                       .map((member) => (
                         <option key={member.id} value={String(member.id)}>
-                          {member.name}
+                          {member.name}{member.roleName ? ` (${member.roleName})` : ""}
                         </option>
                       ))}
                   </select>
@@ -824,7 +934,7 @@ export const StandaloneQAAllocationTab: React.FC<StandaloneQAAllocationTabProps>
                   <option value="">{qaLoading ? "Loading QA members..." : "Choose QA"}</option>
                   {qaMembers.map((member) => (
                     <option key={member.id} value={String(member.id)}>
-                      {member.name}
+                      {member.name}{member.roleName ? ` (${member.roleName})` : ""}
                     </option>
                   ))}
                 </select>

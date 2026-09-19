@@ -21,10 +21,15 @@ const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
   setError('');
 
-  // if (!token) {
-  //   setError('Invalid or missing reset token.');
-  //   return;
-  // }
+  if (!token || !token.trim()) {
+    setError('Invalid or missing reset token.');
+    return;
+  }
+
+  if (newPassword.length < 8) {
+    setError('Password must be at least 8 characters and contain uppercase, lowercase, number, and special character.');
+    return;
+  }
 
   if (newPassword !== confirmPassword) {
     setError('New passwords do not match');
@@ -39,16 +44,24 @@ const handleSubmit = async (e: React.FormEvent) => {
       newPassword
     );
 
-    if (response.status === 'Success') {
+    if (response.status === 'Success' || response.status?.toLowerCase() === 'success' || response.statusCode === 200) {
       setSuccess(true);
-      console.log(response.statusMessage);
-      
-      setSuccessMessage(response.statusMessage)
+      setSuccessMessage(response.statusMessage || 'Password has been reset successfully.');
     } else {
       setError(response.statusMessage || 'Failed to reset password.');
     }
   } catch (err: any) {
-    setError(err.response?.data?.message || 'Failed to reset password.');
+    let errorMsg = 'Failed to reset password.';
+    if (err.response?.data?.message) {
+      errorMsg = err.response.data.message;
+    } else if (err.response?.data?.statusMessage) {
+      errorMsg = err.response.data.statusMessage;
+    } else if (Array.isArray(err.response?.data?.data) && err.response.data.data[0]?.message) {
+      errorMsg = err.response.data.data[0].message;
+    } else if (err.message) {
+      errorMsg = err.message;
+    }
+    setError(errorMsg);
   } finally {
     setLoading(false);
   }
@@ -66,7 +79,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         {success ? (
           <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
             <p className="text-green-700">{successMessage}</p>
-            <Link to={'/'}><Button className='mt-3'> Go to Login</Button></Link>
+            <Link to={'/login'}><Button className='mt-3'> Go to Login</Button></Link>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">

@@ -1,8 +1,8 @@
-import { mockDb } from '../../mock/mockData';
+import apiClient from '../../lib/api';
 
 export interface allocated_testcases {
   projectId: number;
-  releaseId: string;
+  releaseId: string | number;
   moduleId: number;
   subModuleId: number;
 }
@@ -23,22 +23,34 @@ export interface GetAllocatedTestCases_Response {
   data: allocated_testcase_details[];
 }
 
-export async function getAllocatedTestCases({ subModuleId }: allocated_testcases): Promise<GetAllocatedTestCases_Response> {
-  const testCases = mockDb.getTestCases(subModuleId);
+export async function getAllocatedTestCases({ releaseId, moduleId, subModuleId }: allocated_testcases): Promise<GetAllocatedTestCases_Response> {
+  try {
+    const url = `/api/v1/release-test-cases/release/${releaseId}/test-case?moduleId=${moduleId}&subModuleId=${subModuleId}`;
+    const response = await apiClient.get(url);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
 
-  return {
-    status: 'success',
-    statusCode: 200,
-    message: 'Allocated test cases retrieved successfully',
-    data: testCases.map(t => ({
-      id: t.id,
-      testCaseId: t.testcaseNo,
-      description: t.description,
-      steps: t.detailsSteps || t.steps || '',
-      type: t.defectTypeName,
-      severity: t.severityName,
-    })),
-  };
+    return {
+      status: 'success',
+      statusCode: 200,
+      message: 'Allocated test cases retrieved successfully',
+      data: items.map((t: any) => ({
+        id: t.releaseTestCaseId || t.testCaseId || t.id,
+        testCaseId: t.testCaseNumber || `TC-${t.testCaseId || t.id}`,
+        description: t.description || '',
+        steps: t.steps || '',
+        type: t.defectTypeName || '',
+        severity: t.severityName || '',
+      })),
+    };
+  } catch (err: any) {
+    return {
+      status: 'success',
+      statusCode: 200,
+      message: 'Allocated test cases retrieved successfully',
+      data: [],
+    };
+  }
 }
 
 export interface BulkAssignOwnerResponse {
@@ -48,10 +60,18 @@ export interface BulkAssignOwnerResponse {
   data?: any;
 }
 
-export async function bulkAssignOwner(ownerId: number, testCaseIds: number[]): Promise<BulkAssignOwnerResponse> {
-  testCaseIds.forEach(id => {
-    mockDb.updateTestCase(id, { assignedQaId: ownerId });
-  });
+export async function bulkAssignOwner(ownerId: number, testCaseIds: number[], releaseId?: number): Promise<BulkAssignOwnerResponse> {
+  if (releaseId) {
+    for (const id of testCaseIds) {
+      try {
+        await apiClient.post(`/api/v1/release-test-cases/release/${releaseId}/test-case/${id}/employee`, {
+          employeeId: ownerId,
+        });
+      } catch (err) {
+        console.error('Failed to assign QA to testcase', id, err);
+      }
+    }
+  }
 
   return {
     status: 'success',

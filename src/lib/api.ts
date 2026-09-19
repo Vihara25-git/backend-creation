@@ -62,35 +62,36 @@ import { ENDPOINTS } from '../utils/apiendpoint';
     }
   };
   const apiClient: AxiosInstance = axios.create({
-    baseURL: import.meta.env.VITE_BASE_URL || '/api/v1/',
+    baseURL: import.meta.env.VITE_BASE_URL || '',
     timeout: 1000000, 
   });
   const token = tokenManager.getToken();
-  if (token) {
+  if (token && !token.startsWith('mock_')) {
     apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   }
 
-
-  
   apiClient.interceptors.request.use(
-    (config: InternalAxiosRequestConfig) => {
-      
+    async (config: InternalAxiosRequestConfig) => {
+      // Ensure URL has /api/v1 prefix
+      if (config.url && !config.url.startsWith('http') && !config.url.startsWith('/api')) {
+        config.url = `/api/v1${config.url.startsWith('/') ? '' : '/'}${config.url}`;
+      }
+
       const isAuthLoginRequest = config.url?.includes('/auth/login') ||
                                 config.url?.includes('auth/login') ||
                                 (config.baseURL?.includes('auth') && config.url?.includes('login'));
 
       if (!isAuthLoginRequest) {
-        const token = tokenManager.getToken();
+        let token = tokenManager.getToken();
+        if (token && token.startsWith('mock_')) {
+          tokenManager.removeToken();
+          token = null;
+        }
+
         if (token) {
           config.headers = config.headers || {};
           config.headers.Authorization = `Bearer ${token}`;
-          console.log('API Client: Added Authorization header for request to:', config.url);
-          console.log('API Client: Token preview:', token.substring(0, 20) + '...');
-        } else {
-          console.log('API Client: No token available for request to:', config.url);
         }
-      } else {
-        console.log('API Client: Skipping Authorization header for auth/login request:', config.url);
       }
 
       return config;

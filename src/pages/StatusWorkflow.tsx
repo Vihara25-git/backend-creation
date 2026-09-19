@@ -31,6 +31,7 @@ import { useApp } from "../context/AppContext";
 import {
   saveWorkflow,
   getAllWorkflows,
+  deleteWorkflows,
 } from "../api/workflow";
 import { getAllDefectStatuses } from "../api/defectStatus";
 
@@ -125,67 +126,8 @@ const StatusWorkflow: React.FC = () => {
 
   
   useEffect(() => {
-    const loadSavedWorkflow = () => {
-      try {
-        const savedNodes = localStorage.getItem("statusWorkflowNodes");
-        const savedEdges = localStorage.getItem("statusWorkflowEdges");
-        const savedLayout = localStorage.getItem("statusWorkflowLayout");
-
-        if (savedNodes) {
-          const parsedNodes = JSON.parse(savedNodes);
-          setNodes(parsedNodes);
-        } else {
-          setNodes(initialNodes);
-        }
-
-        if (savedEdges) {
-          const parsedEdges = JSON.parse(savedEdges);
-          setEdges(parsedEdges);
-        } else {
-          setEdges(initialEdges);
-        }
-
-        if (savedLayout) {
-          setIsVertical(JSON.parse(savedLayout));
-        }
-      } catch (error) {
-        console.error("Error loading saved workflow:", error);
-        
-        setNodes(initialNodes);
-        setEdges(initialEdges);
-      }
-      setIsInitialized(true);
-    };
-
-    loadSavedWorkflow();
+    setIsInitialized(true);
   }, []);
-
-  
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    try {
-      localStorage.setItem("statusWorkflowNodes", JSON.stringify(nodes));
-      localStorage.setItem("statusWorkflowEdges", JSON.stringify(edges));
-      localStorage.setItem("statusWorkflowLayout", JSON.stringify(isVertical));
-    } catch (error) {
-      console.error("Error saving workflow:", error);
-    }
-  }, [nodes, edges, isVertical, isInitialized]);
-
-  
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      localStorage.setItem("statusWorkflowNodes", JSON.stringify(nodes));
-      localStorage.setItem("statusWorkflowEdges", JSON.stringify(edges));
-      localStorage.setItem("statusWorkflowLayout", JSON.stringify(isVertical));
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-    };
-  }, [nodes, edges, isVertical]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -196,29 +138,49 @@ const StatusWorkflow: React.FC = () => {
     (event: React.DragEvent) => {
       event.preventDefault();
 
-      const type = event.dataTransfer.getData("application/reactflow");
-      if (!type) return;
+      const rawData = event.dataTransfer.getData("application/reactflow");
+      if (!rawData) return;
+
+      let statusObj: any = null;
+      try {
+        statusObj = JSON.parse(rawData);
+      } catch {
+        statusObj = statusTypes && statusTypes.find((s) => s.name === rawData);
+      }
+
+      if (!statusObj) {
+        statusObj = statusTypes && statusTypes.find((s) => s.name === rawData);
+      }
+      if (!statusObj) return;
 
       const position = reactFlowInstance.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
 
+      const nodeId = `status-${statusObj.id}`;
+      // Prevent duplicate status nodes on the canvas
+      const existing = nodes.find(
+        (n) => n.id === nodeId || n.data?.statusId === Number(statusObj.id),
+      );
+      if (existing) {
+        return;
+      }
+
       const newNode: Node = {
-        id: `${type}-${Date.now()}`,
+        id: nodeId,
         type: "default",
         position,
         data: {
-          label: type,
-          color:
-            (statusTypes && statusTypes.find((s) => s.name === type)?.color) ||
-            "#94a3b8",
+          statusId: Number(statusObj.id),
+          label: statusObj.name,
+          color: statusObj.color || "#94a3b8",
         },
       };
 
       setNodes((nds: Node[]) => nds.concat(newNode));
     },
-    [reactFlowInstance, setNodes, statusTypes],
+    [reactFlowInstance, setNodes, statusTypes, nodes],
   );
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
@@ -400,12 +362,14 @@ const StatusWorkflow: React.FC = () => {
   
   const convertWorkflowToApiFormat = useCallback(() => {
     const apiNodes = nodes.map((node) => {
-      const status = statusTypes.find((s) => s.name === node.data.label);
+      const statusId =
+        node.data?.statusId ||
+        statusTypes.find((s) => s.name === node.data?.label)?.id;
 
       return {
-        id: Number(status?.id),
-        positionX: node.position.x,
-        positionY: node.position.y,
+        id: Number(statusId),
+        positionX: Math.round(node.position.x),
+        positionY: Math.round(node.position.y),
       };
     });
 
@@ -413,17 +377,17 @@ const StatusWorkflow: React.FC = () => {
       const sourceNode = nodes.find((node) => node.id === edge.source);
       const targetNode = nodes.find((node) => node.id === edge.target);
 
-      const sourceStatus = statusTypes.find(
-        (status) => status.name === sourceNode?.data.label,
-      );
+      const sourceId =
+        sourceNode?.data?.statusId ||
+        statusTypes.find((status) => status.name === sourceNode?.data?.label)?.id;
 
-      const targetStatus = statusTypes.find(
-        (status) => status.name === targetNode?.data.label,
-      );
+      const targetId =
+        targetNode?.data?.statusId ||
+        statusTypes.find((status) => status.name === targetNode?.data?.label)?.id;
 
       return {
-        fromStatusId: Number(sourceStatus?.id),
-        toStatusId: Number(targetStatus?.id),
+        fromStatusId: Number(sourceId),
+        toStatusId: Number(targetId),
       };
     });
 
@@ -433,60 +397,39 @@ const StatusWorkflow: React.FC = () => {
     };
   }, [nodes, edges, statusTypes]);
 
-  
-  const handleSaveWorkflow = useCallback(async () => {
-    try {
-      setIsSaving(true);
-      setSaveMessage(null);
-
-      const workflowData = convertWorkflowToApiFormat();
-      console.log("Workflow data to be saved:", workflowData);
-
-      if (workflowData.connections.length === 0) {
-        setSaveMessage({
-          type: "error",
-          text: "No workflow transitions to save. Please create connections between status nodes.",
-        });
-        return;
-      }
-
-      console.log("Sending workflow data to API:", workflowData);
-      await saveWorkflow(workflowData);
-      setSaveMessage({ type: "success", text: "Workflow saved successfully!" });
-
-      
-      setTimeout(() => setSaveMessage(null), 3000);
-    } catch (error: any) {
-  console.error("Failed to save workflow:", error);
-
-  const backendMessage =
-    error.response?.data?.message ||
-    error.response?.data?.statusMessage ||
-    error.message ||
-    "Failed to save workflow. Please try again.";
-
-  setSaveMessage({
-    type: "error",
-    text: backendMessage,
-  });
-} finally {
-      setIsSaving(false);
-    }
-  }, [convertWorkflowToApiFormat]);
-
-  
   const convertApiWorkflowToVisual = useCallback(
     (workflow: any) => {
       const newNodes: Node[] = [];
       const newEdges: Edge[] = [];
-
       const addedStatuses = new Map<number, boolean>();
 
-      workflow.transitions.forEach((transition: any) => {
+      // Add nodes from positions
+      if (Array.isArray(workflow.positions)) {
+        workflow.positions.forEach((pos: any) => {
+          if (!addedStatuses.has(pos.id)) {
+            addedStatuses.set(pos.id, true);
+            newNodes.push({
+              id: `status-${pos.id}`,
+              type: "default",
+              position: {
+                x: pos.positionX ?? 0,
+                y: pos.positionY ?? 0,
+              },
+              data: {
+                statusId: pos.id,
+                label: pos.name,
+                color: pos.color,
+              },
+            });
+          }
+        });
+      }
+
+      (workflow.transitions || []).forEach((transition: any) => {
         const fromStatus = transition.fromStatus;
         const toStatus = transition.toStatus;
 
-        if (!addedStatuses.has(fromStatus.id)) {
+        if (fromStatus && !addedStatuses.has(fromStatus.id)) {
           addedStatuses.set(fromStatus.id, true);
           newNodes.push({
             id: `status-${fromStatus.id}`,
@@ -496,13 +439,14 @@ const StatusWorkflow: React.FC = () => {
               y: fromStatus.positionY ?? 0,
             },
             data: {
+              statusId: fromStatus.id,
               label: fromStatus.name,
               color: fromStatus.color,
             },
           });
         }
 
-        if (!addedStatuses.has(toStatus.id)) {
+        if (toStatus && !addedStatuses.has(toStatus.id)) {
           addedStatuses.set(toStatus.id, true);
           newNodes.push({
             id: `status-${toStatus.id}`,
@@ -512,25 +456,28 @@ const StatusWorkflow: React.FC = () => {
               y: toStatus.positionY ?? 0,
             },
             data: {
+              statusId: toStatus.id,
               label: toStatus.name,
               color: toStatus.color,
             },
           });
         }
 
-        newEdges.push({
-          id: `e${fromStatus.id}-${toStatus.id}-${transition.id}`,
-          source: `status-${fromStatus.id}`,
-          target: `status-${toStatus.id}`,
-          type: "custom",
-          animated: true,
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            width: 20,
-            height: 20,
-            color: "#94a3b8",
-          },
-        });
+        if (fromStatus && toStatus) {
+          newEdges.push({
+            id: `e${fromStatus.id}-${toStatus.id}-${transition.id}`,
+            source: `status-${fromStatus.id}`,
+            target: `status-${toStatus.id}`,
+            type: "custom",
+            animated: true,
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              width: 20,
+              height: 20,
+              color: "#94a3b8",
+            },
+          });
+        }
       });
 
       setNodes(newNodes);
@@ -545,38 +492,27 @@ const StatusWorkflow: React.FC = () => {
     [setNodes, setEdges, reactFlowInstance],
   );
 
-  
-  
   const loadExistingWorkflows = useCallback(async () => {
     try {
       setIsLoadingWorkflows(true);
       const response = await getAllWorkflows();
-      console.log("API Response:", response); 
 
-      
       if (
-        response.data &&
-        Array.isArray(response.data) &&
-        response.data.length > 0
+        (response.data && Array.isArray(response.data) && response.data.length > 0) ||
+        (response.positions && Array.isArray(response.positions) && response.positions.length > 0)
       ) {
-        console.log("Found transitions:", response.data.length); 
-
         const workflowData = {
           id: 1,
           name: "Current Workflow",
-          transitions: response.data, 
+          transitions: response.data || [],
+          positions: response.positions || [],
         };
         setExistingWorkflows([workflowData]);
-
-        
-        console.log(
-          "Loading workflow with transitions:",
-          workflowData.transitions.length,
-        );
         convertApiWorkflowToVisual(workflowData);
       } else {
-        console.log("No existing workflows found");
         setExistingWorkflows([]);
+        setNodes([]);
+        setEdges([]);
       }
     } catch (error) {
       console.error("Failed to load existing workflows:", error);
@@ -584,7 +520,45 @@ const StatusWorkflow: React.FC = () => {
     } finally {
       setIsLoadingWorkflows(false);
     }
-  }, [convertApiWorkflowToVisual]);
+  }, [convertApiWorkflowToVisual, setNodes, setEdges]);
+
+  const handleSaveWorkflow = useCallback(async () => {
+    try {
+      setIsSaving(true);
+      setSaveMessage(null);
+
+      const workflowData = convertWorkflowToApiFormat();
+
+      if (workflowData.connections.length === 0) {
+        setSaveMessage({
+          type: "error",
+          text: "No workflow transitions to save. Please create connections between status nodes.",
+        });
+        return;
+      }
+
+      await saveWorkflow(workflowData);
+      setSaveMessage({ type: "success", text: "Workflow saved successfully!" });
+      await loadExistingWorkflows();
+      window.dispatchEvent(new CustomEvent("refreshDefectStatuses"));
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (error: any) {
+      console.error("Failed to save workflow:", error);
+
+      const backendMessage =
+        error.response?.data?.message ||
+        error.response?.data?.statusMessage ||
+        error.message ||
+        "Failed to save workflow. Please try again.";
+
+      setSaveMessage({
+        type: "error",
+        text: backendMessage,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }, [convertWorkflowToApiFormat, loadExistingWorkflows]);
 
   
   useEffect(() => {
@@ -695,7 +669,7 @@ const StatusWorkflow: React.FC = () => {
                   onDragStart={(event) => {
                     event.dataTransfer.setData(
                       "application/reactflow",
-                      status.name,
+                      JSON.stringify(status),
                     );
                     event.dataTransfer.effectAllowed = "move";
                   }}
@@ -785,12 +759,26 @@ const StatusWorkflow: React.FC = () => {
             <Button
               variant="ghost"
               className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
-              onClick={() => {
-                setNodes([]);
-                setEdges([]);
-                localStorage.removeItem("statusWorkflowNodes");
-                localStorage.removeItem("statusWorkflowEdges");
-                localStorage.removeItem("statusWorkflowLayout");
+              onClick={async () => {
+                try {
+                  await deleteWorkflows();
+                  setNodes([]);
+                  setEdges([]);
+                  setExistingWorkflows([]);
+                  setSaveMessage({
+                    type: "success",
+                    text: "Workflow deleted successfully!",
+                  });
+                  setTimeout(() => setSaveMessage(null), 3000);
+                } catch (delErr: any) {
+                  setSaveMessage({
+                    type: "error",
+                    text:
+                      delErr.response?.data?.message ||
+                      delErr.message ||
+                      "Failed to delete workflow",
+                  });
+                }
               }}
             >
               Clear Workflow

@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export interface UserByAllocation {
   userId: number;
@@ -15,43 +15,77 @@ export interface UserByAllocation {
 }
 
 export const getUsersByAllocation = async (projectId: number, moduleId: number): Promise<UserByAllocation[]> => {
-  const mod = mockDb.getModuleById(moduleId);
-  if (!mod || !mod.leaderId) return [];
-  return [{
-    allocateModuleId: 1,
-    moduleId: mod.id,
-    userId: mod.leaderId,
-    userName: mod.leaderName || `User ${mod.leaderId}`,
-    userWithRole: mod.leaderName || `User ${mod.leaderId}`,
-    projectId: projectId,
-  }];
+  try {
+    const response = await apiClient.get(`/api/v1/module/${moduleId}/employee`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+
+    return items.map((item: any) => {
+      const fullName = item.employeeName || (item.firstName && item.lastName ? `${item.firstName} ${item.lastName}`.trim() : item.email || `Employee ${item.employeeId}`);
+      const role = item.isLeader ? 'QA Lead' : 'QA Engineer';
+      return {
+        userId: item.employeeId,
+        userName: fullName,
+        userRole: role,
+        userWithRole: `${fullName} - ${role}`,
+        allocateModuleId: item.id || item.modQaId,
+        allocationId: item.id || item.modQaId,
+        moduleId: item.moduleId || moduleId,
+        projectId,
+      };
+    });
+  } catch {
+    return [];
+  }
 };
 
 export const getUsersBySubmoduleAllocation = async (projectId: number, moduleId: number, subModuleId: number): Promise<UserByAllocation[]> => {
-  const users = mockDb.getUsers();
-  return users.slice(0, 2).map(u => ({
-    allocationId: u.id,
-    userId: u.id,
-    userName: `${u.firstName} ${u.lastName}`,
-    userWithRole: `${u.firstName} ${u.lastName}`,
-    userRole: u.roleName || 'Developer',
-    moduleId,
-    projectId,
-    subModuleId,
-  }));
+  try {
+    const response = await apiClient.get(`/api/v1/module/${moduleId || 0}/sub-module/${subModuleId}/employee`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+
+    return items.map((a: any) => {
+      const name = a.employeeName || (a.employee ? `${a.employee.firstName || ''} ${a.employee.lastName || ''}`.trim() : `Employee ${a.employeeId}`);
+      return {
+        allocationId: a.submoduleDevId || a.id,
+        userId: a.employeeId || a.employee?.empId || a.empId,
+        userName: name,
+        userWithRole: `${name} - Developer`,
+        userRole: 'Developer',
+        moduleId,
+        projectId,
+        subModuleId,
+      };
+    });
+  } catch {
+    return [];
+  }
 };
 
 export async function getUsersByModuleSubmoduleAllocation(projectId: number) {
-  const users = mockDb.getUsers();
-  return {
-    status: 'success',
-    message: 'Developers retrieved successfully',
-    data: users.map(u => ({
-      employeeId: u.id,
-      employeeName: `${u.firstName} ${u.lastName}`,
-      roleName: u.roleName || 'Developer',
-      projectId,
-    })),
-    statusCode: 200,
-  };
+  try {
+    const response = await apiClient.get(`/api/v1/bench-allocation/${projectId}/project`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+
+    return {
+      status: 'success',
+      message: 'Developers retrieved successfully',
+      data: items.map((a: any) => ({
+        employeeId: a.empId || a.employeeId,
+        employeeName: a.employeeName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || 'Developer',
+        roleName: a.roleName || 'Developer',
+        projectId,
+      })),
+      statusCode: 200,
+    };
+  } catch {
+    return {
+      status: 'success',
+      message: 'Developers retrieved successfully',
+      data: [],
+      statusCode: 200,
+    };
+  }
 }

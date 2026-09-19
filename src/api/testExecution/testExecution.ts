@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export type ExecutionStatus =
   | "not-started"
@@ -45,11 +45,6 @@ export function setExecutionStatus(
   all[pid][rid][String(testCaseId)] = status;
 
   localStorage.setItem(EXECUTION_STATUS_KEY, JSON.stringify(all));
-
-  // Also update in mockDb test cases
-  const dbStatus = status === 'passed' ? 'PASS' : status === 'failed' ? 'FAIL' : status === 'blocked' ? 'BLOCKED' : 'NOT_RUN';
-  mockDb.updateTestCase(Number(testCaseId), { executionStatus: dbStatus as any });
-
   return all[pid][rid] as Record<string, ExecutionStatus>;
 }
 
@@ -74,28 +69,88 @@ export function setBulkExecutionStatuses(
 }
 
 export const updateReleaseTestCaseStatus = async (
-  _releaseId: number,
-  releaseTestCaseId: number,
-  payload: {
+  releaseIdOrTestCaseId: number,
+  releaseTestCaseIdOrPayload: any,
+  payloadOrUndefined?: {
     status: "PASSED" | "FAILED";
     priorityId?: number;
     assignedTo?: number;
   }
 ): Promise<any> => {
-  mockDb.updateTestCase(releaseTestCaseId, {
-    executionStatus: payload.status === 'PASSED' ? 'PASS' : 'FAIL',
-  });
+  let releaseId: number;
+  let releaseTestCaseId: number;
+  let payload: {
+    status: "PASSED" | "FAILED";
+    priorityId?: number;
+    assignedTo?: number;
+  };
+
+  if (payloadOrUndefined !== undefined) {
+    releaseId = releaseIdOrTestCaseId;
+    releaseTestCaseId = releaseTestCaseIdOrPayload;
+    payload = payloadOrUndefined;
+  } else {
+    // Called as (releaseTestCaseId, payload)
+    releaseTestCaseId = releaseIdOrTestCaseId;
+    payload = releaseTestCaseIdOrPayload;
+    releaseId = 0; // will be resolved if needed
+  }
+
+  const formData = new FormData();
+  const rawStatus = (payload.status || '').toUpperCase();
+  const normalizedStatus = (rawStatus === 'PASSED' || rawStatus === 'PASS') ? 'PASS' : 'FAIL';
+  const requestData = {
+    passOrFail: normalizedStatus,
+    priorityId: payload.priorityId || null,
+    assignedTo: payload.assignedTo || null,
+  };
+
+  formData.append(
+    'data',
+    new Blob([JSON.stringify(requestData)], { type: 'application/json' })
+  );
+
+  const response = await apiClient.patch(
+    `/api/v1/release-test-cases/release/${releaseId}/test-case/${releaseTestCaseId}/status`,
+    formData
+  );
+
   return {
     status: 'success',
-    statusCode: 200,
+    statusCode: response.status || 200,
     message: 'Test case status updated successfully',
+    data: response.data?.data || response.data,
   };
 };
 
 export const updateReleaseTestCaseStatusWithImage = async (
   releaseId: number,
   releaseTestCaseId: number,
-  _formData: FormData
+  formData: FormData
 ): Promise<any> => {
-  return updateReleaseTestCaseStatus(releaseId, releaseTestCaseId, { status: 'PASSED' });
+  const response = await apiClient.patch(
+    `/api/v1/release-test-cases/release/${releaseId}/test-case/${releaseTestCaseId}/status`,
+    formData
+  );
+
+  return {
+    status: 'success',
+    statusCode: response.status || 200,
+    message: 'Test case status updated successfully',
+    data: response.data?.data || response.data,
+  };
+};
+
+export const deleteReleaseTestCase = async (
+  releaseId: number | string,
+  releaseTestCaseId: number | string
+): Promise<any> => {
+  const response = await apiClient.delete(
+    `/api/v1/release-test-cases/release/${releaseId}/test-case/${releaseTestCaseId}`
+  );
+  return {
+    status: 'success',
+    statusCode: response.status || 200,
+    message: 'Test case removed from release execution successfully',
+  };
 };

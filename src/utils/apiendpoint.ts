@@ -1,37 +1,50 @@
 const BASE = "/api/v1";
 
 export const ENDPOINTS = {
-  designation: `${BASE}/designation`,
-  designationPagination : (page : number, size : number) =>  `${BASE}/designation?page=${page}&size=${size}`,
-  designationById: (id: number) => `${BASE}/designation/${id}`,
+  designation: `${BASE}/Designation/getAll`,
+  designationCreate: `${BASE}/Designation/createdesignation`,
+  designationPagination : (page : number, size : number) =>  `${BASE}/Designation/getAll?page=${page}&size=${size}`,
+  designationById: (id: number) => `${BASE}/Designation/get/${id}`,
+  designationUpdate: (id: number) => `${BASE}/Designation/update/${id}`,
+  designationDelete: (id: number) => `${BASE}/Designation/delete/${id}`,
   designationEmployee: (designationId: number) =>
-    `${BASE}/designation/${designationId}/employee`,
+    `${BASE}/Employee/designation/${designationId}`,
 
- role:(page :number, size: number) => `${BASE}/role?page=${page}&size=${size}&direction=DESC&sort=id`,
-  roleById: (id: number) => `${BASE}/role/${id}`,
+  role: (page: number = 0, size: number = 10) => `${BASE}/Role?page=${page}&size=${size}`,
+  roleCreate: `${BASE}/Role/save`,
+  roleById: (id: number) => `${BASE}/Role/view/${id}`,
+  roleUpdate: (id: number) => `${BASE}/Role/update/${id}`,
+  roleDelete: (id: number) => `${BASE}/Role/delete/${id}`,
 
   permission: `${BASE}/permission`,
   permissionById: (id: number) => `${BASE}/permission/${id}`,
 
-  defectType: `${BASE}/defect-type`,
-  defectTypeById: (id: number) => `${BASE}/defect-type/${id}`,
+  defectType: `${BASE}/defecttype/getAll`,
+  defectTypeCreate: `${BASE}/defecttype/create`,
+  defectTypeById: (id: number) => `${BASE}/defecttype/get/${id}`,
+  defectTypeUpdate: (id: number) => `${BASE}/defecttype/update/${id}`,
+  defectTypeDelete: (id: number) => `${BASE}/defecttype/delete/${id}`,
+  defectTypePagination: (page: number = 0, size: number = 10) => `${BASE}/defecttype/getAll?page=${page}&size=${size}`,
 
-  releaseType: `${BASE}/release-type`,
-  releaseTypeById: (id: number) => `${BASE}/release-type/${id}`,
-  releaseTypePagination : (page:number,size:number) => `${BASE}/release-type?page=${page}&size=${size}`,
+  releaseType: `${BASE}/release_types`,
+  releaseTypeById: (id: number) => `${BASE}/release_types/${id}`,
+  releaseTypePagination: (page: number = 0, size: number = 10) => `${BASE}/release_types?page=${page}&size=${size}`,
 
   severity: `${BASE}/severity`,
-  severityPagination: (page: number = 0, size: number = 5)=>
-  `${BASE}/severity?page=${page}&size=${size}`,
+  severityPagination: (page: number = 0, size: number = 10) =>
+    `${BASE}/severity?page=${page}&size=${size}`,
   severityById: (id: number) => `${BASE}/severity/${id}`,
 
-  priority: `${BASE}/priority`,
-  priorityPagination: (page: number = 0, size: number = 5)=>
-  `${BASE}/priority?page=${page}&size=${size}`,
-  priorityById: (id: number) => `${BASE}/priority/${id}`,
+  priority: `${BASE}/priority/view`,
+  priorityCreate: `${BASE}/priority/save`,
+  priorityPagination: (page: number = 0, size: number = 10) =>
+    `${BASE}/priority/view?page=${page}&size=${size}`,
+  priorityById: (id: number) => `${BASE}/priority/view/${id}`,
+  priorityUpdate: (id: number) => `${BASE}/priority/update/${id}`,
+  priorityDelete: (id: number) => `${BASE}/priority/delete/${id}`,
 
   statusType: `${BASE}/status-type`,
-  statusTypePagination: (page: number = 0, size: number = 5) =>
+  statusTypePagination: (page: number = 0, size: number = 10) =>
     `${BASE}/status-type?page=${page}&size=${size}`,
   statusTypeById: (id: number) => `${BASE}/status-type/${id}`,
 

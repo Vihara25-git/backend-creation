@@ -67,73 +67,72 @@ const Designation: React.FC = () => {
   };
   
 
- const handleCreate = async () => {
-  const trimmed = formData.name.trim();
+  const handleCreate = async () => {
+    const trimmed = formData.name.trim();
 
-  if (!trimmed) {
-    showToast("Designation name cannot be empty", "error");
-    return;
-  }
+    if (!trimmed) {
+      showToast("Designation name cannot be empty", "error");
+      return;
+    }
 
-  try {
-    const response = await createDesignation({ name: trimmed });
+    try {
+      const response = await createDesignation({ name: trimmed });
 
-    await fetchDesignations(currentPage - 1, pageSize);
+      await fetchDesignations(currentPage - 1, pageSize);
 
-    setIsCreateModalOpen(false);
-    resetForm();
+      setIsCreateModalOpen(false);
+      resetForm();
 
-    showToast(response.statusMessage, "success");
+      showToast(response?.statusMessage || response?.message || "Designation created successfully!", "success");
 
-  } catch(error: any){
-      const errorMsg =error.response?.data?.message || "Failed to Delete Employee";
+    } catch(error: any){
+      const errorMsg = error?.response?.data?.statusMessage || error?.response?.data?.message || "Failed to create designation";
       showToast(errorMsg, "error");
-  }
-};
+    }
+  };
 
   const handleEdit = async () => {
-  if (!editingDesignation) return;
-  const trimmed = formData.name.trim();
-  if (trimmed === editingDesignation.name.trim()) {
-    showToast('No changes were made to the designation', 'error');
-    return;
-  }
-  const exists = designations.some(
-    d => d.name.trim().toLowerCase() === trimmed.toLowerCase() && d.id !== editingDesignation.id
-  );
-  if (exists) {
-    setIsEditModalOpen(false);
-    setEditingDesignation(null);
-    resetForm();
-    showToast('Designation already exists.', 'error');
-    return;
-  }
-  try {
-    const response = await putDesignation(editingDesignation.id, { name: trimmed }); 
-    setDesignations(prev => prev.map(d => d.id === editingDesignation.id ? { ...d, name: trimmed } : d));
-    setIsEditModalOpen(false);
-    setEditingDesignation(null);
-    resetForm();
-    showToast(response.statusMessage);
-  } catch (error) {
-    const errorMsg =error.response?.data?.message || "Failed to Change Status";
-    showToast(errorMsg, "error");
-    
-  }
-};
+    if (!editingDesignation) return;
+    const trimmed = formData.name.trim();
+    if (trimmed === editingDesignation.name.trim()) {
+      showToast('No changes were made to the designation', 'error');
+      return;
+    }
+    const exists = designations.some(
+      d => d.name.trim().toLowerCase() === trimmed.toLowerCase() && d.id !== editingDesignation.id
+    );
+    if (exists) {
+      setIsEditModalOpen(false);
+      setEditingDesignation(null);
+      resetForm();
+      showToast('Designation already exists.', 'error');
+      return;
+    }
+    try {
+      const response = await putDesignation(editingDesignation.id, { name: trimmed }); 
+      setDesignations(prev => prev.map(d => d.id === editingDesignation.id ? { ...d, name: trimmed } : d));
+      setIsEditModalOpen(false);
+      setEditingDesignation(null);
+      resetForm();
+      showToast(response?.statusMessage || response?.message || "Designation updated successfully!", "success");
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.statusMessage || error?.response?.data?.message || "Failed to update designation";
+      showToast(errorMsg, "error");
+    }
+  };
 
- const handleDelete = async () => {
-  if (!deletingDesignation) return;
-  try {
-    const response = await deleteDesignation(deletingDesignation.id); 
-    fetchDesignations(0, pageSize)
-    setIsDeleteModalOpen(false);
-    setDeletingDesignation(null);
-    showToast(response.statusMessage);
-  } catch (error) {
-    showToast('Cannot delete designation. It is currently assigned employees ,Please reassign or delete those employees first.', 'error');
-  }
-};
+  const handleDelete = async () => {
+    if (!deletingDesignation) return;
+    try {
+      const response = await deleteDesignation(deletingDesignation.id); 
+      fetchDesignations(0, pageSize);
+      setIsDeleteModalOpen(false);
+      setDeletingDesignation(null);
+      showToast(response?.statusMessage || response?.message || "Designation deleted successfully!", "success");
+    } catch (error) {
+      showToast('Cannot delete designation. It is currently assigned to employees. Please reassign or delete those employees first.', 'error');
+    }
+  };
 
   const openEditModal = (designation: Designations) => {
     setEditingDesignation(designation);

@@ -48,18 +48,15 @@ const ReleaseType: React.FC = () => {
   const handleCreate = async () => {
     const exists = releaseTypes.some(rt => rt.name.trim().toLowerCase() === formData.releaseTypeName.trim().toLowerCase());
     if (exists) { setIsCreateModalOpen(false); resetForm(); showToast('Release Type Name already exists.', 'error'); return; }
-   try {
-     await createReleaseType(formData);
-     await handleGetAll();
-     
-
-     
-     setIsCreateModalOpen(false);
-     resetForm();
-     showToast('Release type created successfully!', 'success');
+    try {
+      await createReleaseType(formData);
+      await handleGetAll();
+      setIsCreateModalOpen(false);
+      resetForm();
+      showToast('Release type created successfully!', 'success');
     } catch (error: any) {
-      showToast(error?.message || "Invalid format!", "error");
-      console.error(error);
+      const errorMsg = error?.response?.data?.statusMessage || error?.response?.data?.message || "Failed to create release type";
+      showToast(errorMsg, "error");
     }
   };
 
@@ -86,10 +83,6 @@ const ReleaseType: React.FC = () => {
     if (exists) { setIsEditModalOpen(false); setEditingReleaseType(null); resetForm(); showToast('Release Type Name already exists.', 'error'); return; }
 
     try {
-      
-      
-      
-      
       await updateReleaseType(editingReleaseType.id, {releaseTypeName: formData.releaseTypeName});
       await handleGetAll();
       setIsEditModalOpen(false);
@@ -97,7 +90,8 @@ const ReleaseType: React.FC = () => {
       setFormData({releaseTypeName: ''});
       showToast('Release type updated successfully!', 'success');
     } catch (error: any) {
-      showToast(error?.message || "Error updating", "error");
+      const errorMsg = error?.response?.data?.statusMessage || error?.response?.data?.message || "Failed to update release type";
+      showToast(errorMsg, "error");
     }
   };
 
@@ -106,9 +100,9 @@ const ReleaseType: React.FC = () => {
     try{
       const response = await deleteReleaseType(deletingReleaseType.id)
         setReleaseTypes(prev => prev.filter(rt => rt.id !== deletingReleaseType.id));
-        showToast(response.statusMessage)
+        showToast(response?.statusMessage || response?.message || "Release type deleted successfully!", "success");
     }catch(error : any){
-        const errorMsg = error.response?.data?.message || "Failed to Delete Employee";
+        const errorMsg = error?.response?.data?.statusMessage || error?.response?.data?.message || "Failed to delete release type";
       showToast(errorMsg, "error");
     }
 

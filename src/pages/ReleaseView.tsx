@@ -480,10 +480,10 @@ const handleProjectSelect = (
                                                   onClick={e => {
                             e.stopPropagation();
                             setReleaseFormData({
-                              name: release.name,
-                              version : release.version,
+                              name: release.name || release.releaseName || "",
+                              version : release.version || release.releaseVersion || "",
                               releaseDate: release.releaseDate ? release.releaseDate.split('T')[0] : "",
-                              releaseType_id: release.releaseType_id || "",
+                              releaseType_id: String(release.releaseType_id || release.releaseTypeId || ""),
                             });
                             setIsCreateReleaseModalOpen(true);
                             setEditingReleaseId(release.id);
@@ -1173,9 +1173,9 @@ const handleProjectSelect = (
             <div className="text-lg font-semibold mb-4 text-gray-900">Delete Release</div>
             <div className="mb-6 text-gray-700">
               {(() => {
-                const release = releases.find(r => r.id === deleteTargetId);
+                const release = releases.find(r => String(r.id) === String(deleteTargetId) || String(r.releaseId) === String(deleteTargetId));
                 return (
-                  <>Are you sure you want to delete the release "<span className='font-semibold'>{release?.releaseName || ''}</span>"? This action cannot be undone.</>
+                  <>Are you sure you want to delete the release "<span className='font-semibold'>{release?.releaseName || release?.name || ''}</span>"? This action cannot be undone.</>
                 );
               })()}
             </div>

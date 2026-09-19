@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 interface DefectByModule {
   name: string;
@@ -16,23 +16,29 @@ export interface DefectsByModuleResponse {
 export async function getDefectsByModule(
   projectId: number
 ): Promise<DefectsByModuleResponse> {
-  const modules = mockDb.getModules(projectId);
-  const data: DefectByModule[] = modules.map(m => ({
-    name: m.name || m.moduleName || 'Module',
-    value: Math.floor(Math.random() * 8) + 2,
-    percentage: 0,
-  }));
+  try {
+    const response = await apiClient.get(`/api/v1/defect/module-summary/${projectId}`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
 
-  const total = data.reduce((sum, item) => sum + item.value, 0) || 1;
-  const withPercentage = data.map(item => ({
-    ...item,
-    percentage: Number(((item.value / total) * 100).toFixed(1)),
-  }));
+    const mapped: DefectByModule[] = items.map((m: any) => ({
+      name: m.moduleName || m.name || 'Module',
+      value: Number(m.defectCount ?? m.count ?? m.value ?? 0),
+      percentage: Number(m.percentage ?? 0),
+    }));
 
-  return {
-    status: 'success',
-    statusCode: 200,
-    statusMessage: 'Success',
-    data: withPercentage,
-  };
+    return {
+      status: 'success',
+      statusCode: 200,
+      statusMessage: 'Success',
+      data: mapped,
+    };
+  } catch (err: any) {
+    return {
+      status: 'error',
+      statusCode: err.response?.status || 500,
+      statusMessage: err.message || 'Failed to fetch defects by module',
+      data: [],
+    };
+  }
 }

@@ -1,13 +1,15 @@
+import apiClient from "../../lib/api";
+
 export interface TimeToFindDefectsResponse {
   status: string;
-  message: string;
+  message?: string;
   data: {
     dayNumber: number;
     totalDefects: number;
-    periodStart: string;
-    periodEnd: string;
+    periodStart?: string;
+    periodEnd?: string;
   }[];
-  statusCode: number;
+  statusCode?: number;
 }
 
 export interface TimeToFixDefectsResponse {
@@ -27,46 +29,95 @@ export interface TimeToFixDefectsResponse {
   }[];
 }
 
-export async function getDefectSeveritySummary(_projectId: string) {
-  return {
-    status: 'success',
-    statusCode: 200,
-    data: [
-      { name: 'Low', count: 8, percentage: 32 },
-      { name: 'Medium', count: 10, percentage: 40 },
-      { name: 'High', count: 5, percentage: 20 },
-      { name: 'Critical', count: 2, percentage: 8 },
-    ],
-  };
+export async function getDefectSeveritySummary(projectId: string) {
+  try {
+    const response = await apiClient.get(`/api/v1/project/${projectId}/defect/severity-breakdown`);
+    const resData = response.data?.data || response.data;
+    return {
+      status: 'success',
+      statusCode: response.status || 200,
+      data: resData,
+    };
+  } catch (error: any) {
+    console.error("Failed to fetch defect severity summary:", error);
+    throw error;
+  }
 }
 
-export async function getReleaseDefectsDaily(_projectId: string, _releaseId: string) {
-  return {
-    status: "success",
-    data: [
-      { dayNumber: 1, totalDefects: 2 },
-      { dayNumber: 2, totalDefects: 4 },
-      { dayNumber: 3, totalDefects: 1 },
-      { dayNumber: 4, totalDefects: 5 },
-      { dayNumber: 5, totalDefects: 3 },
-      { dayNumber: 6, totalDefects: 2 },
-      { dayNumber: 7, totalDefects: 0 },
-    ],
-  };
+export async function getReleaseDefectsDaily(projectId: string, releaseId?: string): Promise<TimeToFindDefectsResponse> {
+  try {
+    const url = releaseId
+      ? `/api/v1/project/${projectId}/release/${releaseId}/dashboard/time-to-find`
+      : `/api/v1/project/${projectId}/dashboard/time-to-find`;
+
+    const response = await apiClient.get(url);
+    const rawData = Array.isArray(response.data) ? response.data : (response.data?.data || []);
+
+    const mapped = rawData.map((item: any) => {
+      const dayNum = typeof item.dayNumber === 'number'
+        ? item.dayNumber
+        : parseInt(String(item.day || '').replace(/\D/g, '') || '1', 10);
+
+      return {
+        dayNumber: dayNum,
+        totalDefects: Number(item.count ?? item.totalDefects ?? 0),
+        periodStart: item.periodStart || '',
+        periodEnd: item.periodEnd || '',
+      };
+    });
+
+    return {
+      status: "success",
+      statusCode: 200,
+      message: "Retrieved successfully",
+      data: mapped,
+    };
+  } catch (error) {
+    console.error("Failed to fetch time to find defects:", error);
+    return {
+      status: "error",
+      statusCode: 500,
+      message: "Failed to retrieve time to find defects",
+      data: [],
+    };
+  }
 }
 
-export async function getTimeToFixDefectsDaily(projectId: number, _releaseId: number) {
-  return {
-    projectId,
-    releaseName: 'Release 2.4.0',
-    dailyData: [
-      { label: 'Day 1', dayNumber: 1, defectFixedCount: 1, timeRange: '24h' },
-      { label: 'Day 2', dayNumber: 2, defectFixedCount: 3, timeRange: '24h' },
-      { label: 'Day 3', dayNumber: 3, defectFixedCount: 2, timeRange: '24h' },
-      { label: 'Day 4', dayNumber: 4, defectFixedCount: 4, timeRange: '24h' },
-      { label: 'Day 5', dayNumber: 5, defectFixedCount: 2, timeRange: '24h' },
-      { label: 'Day 6', dayNumber: 6, defectFixedCount: 1, timeRange: '24h' },
-      { label: 'Day 7', dayNumber: 7, defectFixedCount: 0, timeRange: '24h' },
-    ],
-  };
+export async function getTimeToFixDefectsDaily(projectId: number, releaseId?: number): Promise<TimeToFixDefectsResponse> {
+  try {
+    const url = releaseId
+      ? `/api/v1/project/${projectId}/release/${releaseId}/dashboard/time-to-fixed`
+      : `/api/v1/project/${projectId}/dashboard/time-to-fixed`;
+
+    const response = await apiClient.get(url);
+    const rawData = Array.isArray(response.data) ? response.data : (response.data?.data || []);
+
+    const mapped = rawData.map((item: any) => {
+      const dayNum = typeof item.dayNumber === 'number'
+        ? item.dayNumber
+        : parseInt(String(item.day || '').replace(/\D/g, '') || '1', 10);
+
+      return {
+        label: item.day || item.label || `Day ${dayNum}`,
+        dayNumber: dayNum,
+        defectFixedCount: Number(item.count ?? item.defectFixedCount ?? 0),
+        timeRange: item.timeRange || '24h',
+      };
+    });
+
+    return {
+      projectId,
+      releaseName: '',
+      dailyData: mapped,
+      data: mapped,
+    };
+  } catch (error) {
+    console.error("Failed to fetch time to fix defects:", error);
+    return {
+      projectId,
+      releaseName: '',
+      dailyData: [],
+      data: [],
+    };
+  }
 }

@@ -20,7 +20,7 @@ export const AccessDenied = () => {
           </h1>
 
           <p className="text-gray-600 mb-8">
-            You do not have permission to access this project.
+            You do not have permission to access this page or module.
           </p>
 
           <button

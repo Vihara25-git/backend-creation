@@ -224,23 +224,49 @@ export const EmailTemplatesTab: React.FC = () => {
       const apiTemplates: any[] = tplRes?.data || [];
       const pointSetups: any[] = psRes || [];
 
-      
       const enabledMap: Record<number, boolean> = {};
       pointSetups.forEach((ps: any) => {
         enabledMap[ps.id] = ps.isEnabled ?? true;
       });
 
-      const merged: MergedTemplate[] = apiTemplates.map((t: any) => ({
-  id: t.id,
-  pointSetupId: t.pointSetupId,
-  eventType: t.eventType,
-  eventLabel: t.eventType?.replaceAll("_", " ") || "",
-  subject: t.subject || "",
-  body: t.body || "",
-  variables: EVENT_VARIABLES[t.eventType] || DEFAULT_VARIABLES,
-  isEnabled: canBeDisabled(t.eventType) ? (enabledMap[t.pointSetupId] ?? true) : true,
-  updatedAt: t.updatedAt,
-}));
+      const merged: MergedTemplate[] = apiTemplates.map((t: any) => {
+        const id = t.templateId ?? t.id;
+        const eventType = t.emailNotificationType || t.eventType || "";
+        const eventLabel = eventType ? eventType.replaceAll("_", " ") : "";
+        const isEnabled = canBeDisabled(eventType)
+          ? (t.status !== undefined ? Boolean(t.status) : (enabledMap[id] ?? true))
+          : true;
+
+        return {
+          id: Number(id),
+          pointSetupId: Number(id),
+          eventType,
+          eventLabel,
+          subject: t.subject || "",
+          body: t.body || "",
+          variables: EVENT_VARIABLES[eventType] || DEFAULT_VARIABLES,
+          isEnabled,
+          updatedAt: t.updatedAt || "",
+        };
+      });
+
+      // Restore custom order from localStorage if saved
+      const savedOrder = localStorage.getItem("emailTemplatesOrder");
+      if (savedOrder) {
+        try {
+          const orderIds: number[] = JSON.parse(savedOrder);
+          merged.sort((a, b) => {
+            const idxA = orderIds.indexOf(a.id);
+            const idxB = orderIds.indexOf(b.id);
+            if (idxA === -1 && idxB === -1) return 0;
+            if (idxA === -1) return 1;
+            if (idxB === -1) return -1;
+            return idxA - idxB;
+          });
+        } catch {
+          // ignore
+        }
+      }
 
       setTemplates(merged);
     } catch (err) {
@@ -250,27 +276,25 @@ export const EmailTemplatesTab: React.FC = () => {
     }
   };
 
-  const handleToggle = async (templateId: number, pointSetupId: number, enabled: boolean) => {
-    
+  const handleToggle = async (templateId: number, _pointSetupId: number, enabled: boolean) => {
     setTemplates((prev) =>
       prev.map((t) => (t.id === templateId ? { ...t, isEnabled: enabled } : t))
     );
     setSavingStates((prev) => ({ ...prev, [templateId]: true }));
     try {
-      await updateEmailPointSetupStatus(pointSetupId, enabled);
+      await updateEmailTemplate(templateId, { status: enabled } as any);
       showToast(`Template ${enabled ? "enabled" : "disabled"}`, "success");
-    } catch {
-      
+    } catch (err: any) {
       setTemplates((prev) =>
         prev.map((t) => (t.id === templateId ? { ...t, isEnabled: !enabled } : t))
       );
-      showToast("Failed to update status", "error");
+      const msg = err?.response?.data?.message || err?.message || "Failed to update status";
+      showToast(msg, "error");
     } finally {
       setSavingStates((prev) => ({ ...prev, [templateId]: false }));
     }
   };
 
-  
   const handleEdit = (template: MergedTemplate) => {
     setEditTarget(template);
     setEditForm({ subject: template.subject, body: template.body });
@@ -295,14 +319,14 @@ export const EmailTemplatesTab: React.FC = () => {
       );
       setEditTarget(null);
       showToast("Template saved successfully", "success");
-    } catch {
-      showToast("Failed to save template", "error");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "Failed to save template";
+      showToast(msg, "error");
     } finally {
       setSavingEdit(false);
     }
   };
 
-  
   const handleReset = async (template: MergedTemplate) => {
     try {
       const res = await resetEmailTemplate(template.id);
@@ -315,18 +339,20 @@ export const EmailTemplatesTab: React.FC = () => {
         )
       );
       showToast("Template reset to default", "success");
-    } catch {
-      showToast("Failed to reset template", "error");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "Failed to reset template";
+      showToast(msg, "error");
     }
   };
 
-  
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = templates.findIndex((t) => t.id === active.id);
     const newIndex = templates.findIndex((t) => t.id === over.id);
-    setTemplates(arrayMove(templates, oldIndex, newIndex));
+    const newTemplates = arrayMove(templates, oldIndex, newIndex);
+    setTemplates(newTemplates);
+    localStorage.setItem("emailTemplatesOrder", JSON.stringify(newTemplates.map((t) => t.id)));
   };
 
   

@@ -49,6 +49,7 @@ import {
 } from "../api/KLOC/getKLOC";
 import {
   updateProjectKloc,
+  deleteProjectKloc,
   calculateKlocFromGithub,
   CalculateKlocRequest,
 } from "../api/KLOC/putKLOC";
@@ -66,7 +67,7 @@ import {
   getDefectsByProjectId,
   FilteredDefect,
 } from "../api/defect/filterDefectByProject";
-import { mockDb } from "../mock/mockData";
+import { getAllDefectStatuses } from "../api/defectStatus";
 
 ChartJS.register(ArcElement, ChartTooltip, ChartLegend);
 console.log("Dashboard: Initializing Prototype...");
@@ -80,6 +81,9 @@ export const Dashboard: React.FC = () => {
   const [projectsError, setProjectsError] = useState<string | null>(null);
 const [projectRiskData, setProjectRiskData] = useState<{
   [projectId: string]: 'high' | 'medium' | 'low'
+}>({});
+const [projectSeverityCounts, setProjectSeverityCounts] = useState<{
+  [projectId: string]: { high: number; medium: number; low: number }
 }>({});
 const [dsiStatus, setDsiStatus] = useState<string>('Healthy');
 const [loadingRiskData, setLoadingRiskData] = useState(false);
@@ -286,6 +290,7 @@ const FetchData = async () => {
 
     setLoadingRiskData(true);
     const riskMap: { [key: string]: 'high' | 'medium' | 'low' } = {};
+    const severityCountMap: { [key: string]: { high: number; medium: number; low: number } } = {};
 
     await Promise.all(
       allProjects.map(async (project: any) => {
@@ -313,16 +318,23 @@ const FetchData = async () => {
           }
 
           let dsiRisk: 'high' | 'medium' | 'low' = 'low';
+          let highCount = 0;
+          let mediumCount = 0;
+          let lowCount = 0;
           try {
             const dsiRes = await getDefectSeverityIndex(project.id);
-            const status = dsiRes?.data?.dsiStatus || 'Healthy';
+            const dsiData = dsiRes?.data;
+            const status = dsiData?.dsiStatus || dsiData?.status || 'Healthy';
             if (status === 'Critical' || status === 'High Risk') {
               dsiRisk = 'high';
-            } else if (status === 'Needs Attention') {
+            } else if (status === 'Needs Attention' || status === 'Medium Risk') {
               dsiRisk = 'medium';
             } else {
               dsiRisk = 'low';
             }
+            highCount = (Number(dsiData?.highDefects) || 0) + (Number(dsiData?.criticalDefects) || 0);
+            mediumCount = Number(dsiData?.mediumDefects) || 0;
+            lowCount = Number(dsiData?.lowDefects) || 0;
           } catch {
             dsiRisk = 'low';
           }
@@ -337,15 +349,18 @@ const FetchData = async () => {
           }
 
           riskMap[project.id] = overallRisk;
+          severityCountMap[project.id] = { high: highCount, medium: mediumCount, low: lowCount };
 
         } catch (error) {
           console.error(`Failed to fetch metrics for project ${project.id}:`, error);
           riskMap[project.id] = 'low';
+          severityCountMap[project.id] = { high: 0, medium: 0, low: 0 };
         }
       })
     );
 
     setProjectRiskData(riskMap);
+    setProjectSeverityCounts(severityCountMap);
     setLoadingRiskData(false);
 
   } catch (error) {
@@ -443,16 +458,20 @@ useEffect(() => {
   const getDefectsByReopenCount = (label: string): FilteredDefect[] => {
     if (!allDefects.length) return [];
 
-    if (label.includes("1 time")) {
+    const lower = label.toLowerCase();
+    if (lower.includes("not reopened")) {
+      return allDefects.filter((d) => !d.reOpenCount || d.reOpenCount === 0);
+    } else if (lower.includes("reopened") && !lower.includes("not")) {
+      return allDefects.filter((d) => d.reOpenCount && d.reOpenCount > 0);
+    } else if (label.includes("1 time")) {
       return allDefects.filter((d) => d.reOpenCount === 1);
     } else if (label.includes("2 times")) {
       return allDefects.filter((d) => d.reOpenCount === 2);
     } else if (label.includes("3 times")) {
       return allDefects.filter((d) => d.reOpenCount === 3);
     } else if (label.includes("4+ times") || label.includes("4 or more")) {
-      return allDefects.filter((d) => d.reOpenCount >= 4);
+      return allDefects.filter((d) => d.reOpenCount && d.reOpenCount >= 4);
     } else {
-      
       const match = label.match(/(\d+)/);
       if (match) {
         const count = parseInt(match[1]);
@@ -495,7 +514,8 @@ useEffect(() => {
 
     const fetchStatuses = async () => {
       try {
-        const statusData = mockDb.getStatuses();
+        const res = await getAllDefectStatuses();
+        const statusData = res.content || [];
         const mappedStatuses = statusData.map((s: any) => ({
           id: s.id,
           defectStatusName: s.name || s.statusName || s.defectStatusName,
@@ -539,19 +559,7 @@ useEffect(() => {
 
 
   useEffect(() => {
-    if (!selectedProjectId || !releases.length) {
-      setDefectTypeData(null);
-      return;
-    }
-
-    
-    const activeRelease = releases.find(
-      (r) => r.status?.toLowerCase() === "active",
-    );
-    const activeReleaseId = activeRelease ? Number(activeRelease.id) : null;
-
-    if (!activeReleaseId) {
-      console.warn("No active release found for defect type distribution");
+    if (!selectedProjectId) {
       setDefectTypeData(null);
       return;
     }
@@ -641,17 +649,7 @@ useEffect(() => {
   }, [selectedProjectId]);
 
   useEffect(() => {
-    if (!selectedProjectId || !releases.length) {
-      setDefectsByModule([]);
-      return;
-    }
-
-    const activeRelease = releases.find(
-      (r) => r.status?.toLowerCase() === "active",
-    );
-    const activeReleaseId = activeRelease ? Number(activeRelease.id) : null;
-
-    if (!activeReleaseId) {
+    if (!selectedProjectId) {
       setDefectsByModule([]);
       return;
     }
@@ -773,6 +771,25 @@ useEffect(() => {
     }
   };
 
+  const handleKlocDelete = async () => {
+    if (!selectedProjectId) return;
+    try {
+      await deleteProjectKloc(Number(selectedProjectId));
+      const klocRes = await getKILOC(Number(selectedProjectId));
+      const defaultKloc = klocRes?.data?.kloc || 0.1;
+      setKlocInput(defaultKloc);
+      setKlocChanged(false);
+      setDefectDensity((prev) => ({
+        ...prev!,
+        kloc: defaultKloc,
+      }));
+      setKlocUpdated(prev => prev + 1);
+      await refreshCombinedRiskForProject(selectedProjectId);
+    } catch (error) {
+      console.error("Failed to delete KLOC:", error);
+    }
+  };
+
   const handleCalculateKloc = async () => {
     const activeRelease = releases.find(
       (r) => r.status?.toUpperCase() === "ACTIVE",
@@ -828,13 +845,13 @@ useEffect(() => {
     }
   };
 
-  // Fetch day-wise defects when a release is selected
+  // Fetch day-wise defects when a release is selected or all releases
   useEffect(() => {
-    if (selectedProjectId && selectedRelease?.releaseId) {
+    if (selectedProjectId) {
       setLoadingReleaseDailyDefects(true);
       getReleaseDefectsDaily(
         String(selectedProjectId),
-        String(selectedRelease.releaseId),
+        selectedRelease?.releaseId ? String(selectedRelease.releaseId) : undefined,
       )
         .then((res) => {
           setReleaseDailyDefects(res.data || []);
@@ -849,31 +866,15 @@ useEffect(() => {
     }
   }, [selectedProjectId, selectedRelease]);
 
-  // Fetch day-wise fixed defects when a release is selected
+  // Fetch day-wise fixed defects when a release is selected or all releases
   useEffect(() => {
-    if (selectedProjectId && selectedRelease?.releaseId) {
-      console.log(
-        "Fetching time to fix data for projectId:",
-        selectedProjectId,
-        "releaseId:",
-        selectedRelease.releaseId,
-      );
-      console.log("Selected release object:", selectedRelease);
+    if (selectedProjectId) {
       setLoadingReleaseDailyFixedDefects(true);
-      console.log("=== New API Call Debug ===");
-      console.log(
-        "Calling getTimeToFixDefectsDaily with projectId:",
-        Number(selectedProjectId),
-        "releaseId:",
-        selectedRelease.releaseId,
-      );
       getTimeToFixDefectsDaily(
         Number(selectedProjectId),
-        selectedRelease.releaseId,
+        selectedRelease?.releaseId ? Number(selectedRelease.releaseId) : undefined,
       )
         .then((res) => {
-          console.log("=== New API Response Debug ===");
-          console.log("Time to fix defects response:", res);
           let dailyData = [];
           if (res && Array.isArray(res)) {
             dailyData = res;
@@ -883,8 +884,6 @@ useEffect(() => {
             dailyData = res.dailyData;
           }
 
-          console.log("Processed daily data:", dailyData);
-          console.log("Daily data length:", dailyData.length);
           setReleaseDailyFixedDefects(dailyData);
           setLoadingReleaseDailyFixedDefects(false);
         })
@@ -894,11 +893,6 @@ useEffect(() => {
           setLoadingReleaseDailyFixedDefects(false);
         });
     } else {
-      console.log(
-        "Not fetching time to fix data - missing projectId or releaseId",
-      );
-      console.log("selectedProjectId:", selectedProjectId);
-      console.log("selectedRelease:", selectedRelease);
       setReleaseDailyFixedDefects(null);
     }
   }, [selectedProjectId, selectedRelease]);
@@ -1269,21 +1263,15 @@ projects.forEach((project) => {
             (() => {
               const projectsWithRisk = projects.map((project: any) => {
                 const risk = projectRiskData[project.id] || 'low';
+                const counts = projectSeverityCounts[project.id] || { high: 0, medium: 0, low: 0 };
 
-                
-                const projectDefs = defects.filter(d => d.projectId === project.id);
-                const highCount = projectDefs.filter(d =>
-                  d.severity?.toLowerCase() === 'high' ||
-                  d.severity?.toLowerCase() === 'critical'
-                ).length;
-                const mediumCount = projectDefs.filter(d =>
-                  d.severity?.toLowerCase() === 'medium'
-                ).length;
-                const lowCount = projectDefs.filter(d =>
-                  d.severity?.toLowerCase() === 'low'
-                ).length;
-
-                return { ...project, risk, highCount, mediumCount, lowCount };
+                return {
+                  ...project,
+                  risk,
+                  highCount: counts.high,
+                  mediumCount: counts.medium,
+                  lowCount: counts.low,
+                };
               });
 
               const riskOrder = { high: 0, medium: 1, low: 2 };
@@ -1693,6 +1681,7 @@ projects.forEach((project) => {
                   setKlocChanged(true);
                 }}
                 onKlocUpdate={handleKlocInputChange}
+                onKlocDelete={handleKlocDelete}
                 onCalculateClick={() => setShowKlocModal(true)}
                 klocChanged={klocChanged}
                 canEdit={true}
@@ -2331,12 +2320,12 @@ projects.forEach((project) => {
                   data={(() => {
                     if (
                       selectedProjectId &&
-                      selectedRelease?.releaseId &&
                       releaseDailyDefects &&
                       releaseDailyDefects.length > 0
                     ) {
                       const maxDay = Math.max(
                         ...releaseDailyDefects.map((d) => d.dayNumber),
+                        7
                       );
                       const days = Array.from(
                         { length: maxDay },
@@ -2354,12 +2343,10 @@ projects.forEach((project) => {
                       }));
                     }
                     
-                    if (!selectedRelease?.releaseName) {
-                      return Array.from({ length: 7 }, (_, i) => ({
-                        day: `Day ${i + 1}`,
-                        defects: 0,
-                      }));
-                    }
+                    return Array.from({ length: 7 }, (_, i) => ({
+                      day: `Day ${i + 1}`,
+                      defects: 0,
+                    }));
                     const days = Array.from(
                       { length: 7 },
                       (_, i) => `Day ${i + 1}`,
@@ -2443,11 +2430,13 @@ projects.forEach((project) => {
                   data={(() => {
                     if (
                       selectedProjectId &&
-                      selectedRelease?.releaseId &&
                       releaseDailyFixedDefects &&
                       releaseDailyFixedDefects.length > 0
                     ) {
-                      const maxDay = Math.max(...releaseDailyFixedDefects.map((d) => d.dayNumber));
+                      const maxDay = Math.max(
+                        ...releaseDailyFixedDefects.map((d) => d.dayNumber),
+                        7
+                      );
                       const days = Array.from({ length: maxDay }, (_, i) => `Day ${i + 1}`);
                       const fixedCounts = Array(maxDay).fill(0);
                       releaseDailyFixedDefects.forEach((d) => {
@@ -2763,6 +2752,7 @@ function DefectDensityMeter({
   klocInput,
   onKlocInputChange,
   onKlocUpdate,
+  onKlocDelete,
   onCalculateClick,
   klocChanged,
   canEdit = false,
@@ -2773,6 +2763,7 @@ function DefectDensityMeter({
   klocInput?: number;
   onKlocInputChange?: (value: number) => void;
   onKlocUpdate?: () => void;
+  onKlocDelete?: () => void;
   onCalculateClick?: () => void;
   klocChanged?: boolean;
   canEdit?: boolean;
@@ -2993,6 +2984,18 @@ function DefectDensityMeter({
               />
             </svg>
           </button>
+          {onKlocDelete && (
+            <button
+              type="button"
+              className="w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center transition"
+              onClick={onKlocDelete}
+              title="Reset / Delete KLOC value"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             className="px-4 py-1.5 rounded-lg bg-blue-50 border border-blue-300 text-blue-700 text-sm font-semibold hover:bg-blue-100 transition"

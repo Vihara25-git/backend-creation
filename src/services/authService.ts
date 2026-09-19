@@ -1,5 +1,4 @@
-import { tokenManager } from '../lib/api';
-import { mockDb } from '../mock/mockData';
+import apiClient, { tokenManager } from '../lib/api';
 
 interface LoginResponse {
   status: string;
@@ -25,16 +24,20 @@ interface LoginResponse {
 const clearAuthDataHelper = (): void => {
   tokenManager.removeToken();
   tokenManager.removeRefreshToken();
+  delete apiClient.defaults.headers.common['Authorization'];
   localStorage.removeItem('user');
+  localStorage.removeItem('authToken');
   localStorage.removeItem('auth_token');
   sessionStorage.removeItem('auth_token');
+  sessionStorage.removeItem('redirectUrl');
 
   const APP_STORAGE_KEYS = [
     'statusWorkflowNodes',
     'statusWorkflowEdges',
     'emailConfigTab',
     'assignments',
-    'selectedProjectId'
+    'selectedProjectId',
+    'redirectUrl'
   ];
 
   APP_STORAGE_KEYS.forEach((key) => {
@@ -44,59 +47,93 @@ const clearAuthDataHelper = (): void => {
 };
 
 class AuthService {
-  static async login(email: string, _password?: string): Promise<LoginResponse> {
+  static async login(email: string, password?: string): Promise<LoginResponse> {
     this.clearAuthData();
 
-    // Check if user exists in mock database or create default admin
-    const users = mockDb.getUsers();
-    const matchedUser = users.find(u => u.email.toLowerCase() === email.toLowerCase()) || users[0];
+    const response = await apiClient.post('/api/v1/auth/login', {
+      email,
+      password,
+    });
 
-    const mockToken = 'mock_jwt_token_' + btoa(JSON.stringify({
-      sub: matchedUser.email,
-      userId: matchedUser.id,
-      exp: Math.floor(Date.now() / 1000) + (365 * 24 * 3600), // 1 year expiry
-      userType: matchedUser.userType || 'CompanyStaff'
-    }));
+    const data = response.data;
+    const token = data.token || data.accessToken || data.jwt;
 
-    const mockRefreshToken = 'mock_refresh_token_' + Date.now();
+    const names = (data.employeeName || 'User').split(' ');
+    const firstName = names[0] || 'User';
+    const lastName = names.slice(1).join(' ') || '';
 
-    const responseData: LoginResponse = {
-      status: 'success',
-      statusCode: 200,
-      statusMessage: 'Login successful',
-      data: {
-        token: mockToken,
-        refreshToken: mockRefreshToken,
-        type: 'Bearer',
-        userId: matchedUser.id,
-        employeeId: matchedUser.id,
-        companyStaffId: matchedUser.id,
-        email: matchedUser.email,
-        firstName: matchedUser.firstName,
-        lastName: matchedUser.lastName,
-        userType: matchedUser.userType || 'CompanyStaff',
-        roles: matchedUser.roles || ['Super Admin'],
-        globalPermissions: ['ALL_PERMISSIONS'],
-        projectAccessList: ['1', '2', '3'],
-      },
+    const employeeFullName = (data.employeeName || `${firstName} ${lastName}`).trim() || 'Admin SGIC';
+
+    const userData = {
+      userId: Number(data.employeeId || 1),
+      employeeId: Number(data.employeeId || 1),
+      companyStaffId: Number(data.employeeId || 1),
+      email: data.email || email,
+      firstName,
+      lastName,
+      employeeName: employeeFullName,
+      name: employeeFullName,
+      fullName: employeeFullName,
+      userType: 'ADMIN',
+      roles: data.roles && data.roles.length > 0 ? data.roles : ['ROLE_ADMIN', 'ADMIN'],
+      globalPermissions: ['ALL_PERMISSIONS'],
+      projectAccessList: [],
     };
 
-    const { token, refreshToken, ...userData } = responseData.data;
-
     tokenManager.setToken(token);
-    tokenManager.setRefreshToken(refreshToken);
+    if (data.refreshToken) {
+      tokenManager.setRefreshToken(data.refreshToken);
+    }
     localStorage.setItem('user', JSON.stringify(userData));
 
-    return responseData;
+    return {
+      status: 'success',
+      statusCode: 200,
+      statusMessage: data.message || 'Login successful',
+      data: {
+        token,
+        refreshToken: data.refreshToken || token,
+        type: 'Bearer',
+        ...userData,
+      },
+    };
   }
 
-  static async changePassword(_currentPassword?: string, _newPassword?: string, _confirmPassword?: string): Promise<void> {
-    // Return mock success
-    return Promise.resolve();
+  static async ensureAuthenticated(): Promise<string> {
+    const existingToken = tokenManager.getToken();
+    if (existingToken && !existingToken.startsWith('mock_')) {
+      return existingToken;
+    }
+    throw new Error('User is not authenticated');
+  }
+
+  static async changePassword(
+    currentPassword?: string,
+    newPassword?: string,
+    empId?: number,
+    email?: string
+  ): Promise<void> {
+    const currentUser = this.getCurrentUser();
+    const resolvedEmail = email || currentUser?.email;
+    const resolvedEmpId = empId || currentUser?.employeeId || currentUser?.userId;
+
+    await apiClient.post('/api/v1/auth/change-password', {
+      currentPassword,
+      oldPassword: currentPassword,
+      newPassword,
+      email: resolvedEmail,
+      empId: resolvedEmpId ? Number(resolvedEmpId) : undefined,
+    });
   }
 
   static async logout(): Promise<void> {
     this.clearAuthData();
+    window.dispatchEvent(new CustomEvent('auth:logout'));
+    try {
+      await apiClient.post('/api/v1/auth/log-out');
+    } catch {
+      // ignore logout network errors
+    }
   }
 
   static clearAuthData(): void {
@@ -109,7 +146,7 @@ class AuthService {
 
   static isAuthenticated(): boolean {
     const token = tokenManager.getToken();
-    return token !== null && token.length > 0;
+    return token !== null && token.length > 0 && !token.startsWith('mock_');
   }
 
   static getCurrentUser(): any | null {
@@ -121,21 +158,20 @@ class AuthService {
         return null;
       }
     }
-    // Fallback default admin user
-    const defaultUser = mockDb.getUsers()[0];
-    const userObj = {
-      userId: defaultUser.id,
-      employeeId: defaultUser.id,
-      companyStaffId: defaultUser.id,
-      email: defaultUser.email,
-      firstName: defaultUser.firstName,
-      lastName: defaultUser.lastName,
-      userType: 'CompanyStaff',
-      roles: ['Super Admin'],
-      globalPermissions: ['ALL_PERMISSIONS'],
-      projectAccessList: ['1', '2', '3'],
-    };
-    return userObj;
+    return null;
+  }
+
+  static getCurrentUserFullName(): string {
+    const user = this.getCurrentUser();
+    if (!user) return 'Admin SGIC';
+    if (user.employeeName) return user.employeeName;
+    if (user.fullName) return user.fullName;
+    if (user.name) return user.name;
+    const full = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+    if (full && full !== 'User') return full;
+    if (user.username) return user.username;
+    if (user.email) return user.email.split('@')[0];
+    return 'Admin SGIC';
   }
 
   static getToken(): string | null {

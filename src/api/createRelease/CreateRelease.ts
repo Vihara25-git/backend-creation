@@ -1,10 +1,11 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export interface CreateReleaseRequest {
   name: string;
   releaseDate: string;
   releaseType_name?: string;
   releaseTypeId?: number;
+  releaseType_id?: string | number;
   project_id: number;
   status?: string;
   description?: string;
@@ -19,22 +20,20 @@ export interface CreateReleaseResponse {
 }
 
 export const createRelease = async (payload: CreateReleaseRequest): Promise<any> => {
-  const created = mockDb.createRelease({
-    name: payload.name,
+  const releaseTypeId = Number(payload.releaseTypeId || (payload as any).releaseType_id) || 1;
+  const body = {
     releaseName: payload.name,
-    releaseDate: payload.releaseDate,
-    releaseTypeName: payload.releaseType_name || 'Major Release',
-    releaseTypeId: payload.releaseTypeId || 1,
-    projectId: payload.project_id,
-    status: payload.status || 'In Progress',
-    description: payload.description || '',
-    version: payload.version || 'v1.0.0',
-  });
+    releaseVersion: payload.version || 'v1.0.0',
+    releaseDate: payload.releaseDate ? payload.releaseDate.split('T')[0] : new Date().toISOString().split('T')[0],
+    projectId: Number(payload.project_id),
+    releaseTypeId,
+  };
 
+  const response = await apiClient.post('/api/v1/ReleaseView/save', body);
   return {
     status: 'success',
-    message: 'Release created successfully',
-    statusCode: 200,
-    data: created,
+    message: response.data?.statusMessage || 'Release created successfully',
+    statusCode: response.status || 200,
+    data: response.data?.data || response.data,
   };
 };

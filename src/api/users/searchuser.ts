@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export interface SearchUserData {
   id: number;
@@ -12,14 +12,23 @@ export interface SearchUserData {
 }
 
 export async function searchUsers(searchTerm: string) {
-  const users = mockDb.getUsers();
-  const term = searchTerm.toLowerCase();
+  try {
+    const response = await apiClient.get(`/api/v1/Employee/search?keyword=${encodeURIComponent(searchTerm)}`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
 
-  return users.filter(u =>
-    u.firstName.toLowerCase().includes(term) ||
-    u.lastName.toLowerCase().includes(term) ||
-    u.email.toLowerCase().includes(term) ||
-    u.userId.toLowerCase().includes(term) ||
-    u.designationName?.toLowerCase().includes(term)
-  );
+    return items.map((u: any) => ({
+      id: u.empId || u.id,
+      userId: `EMP${String(u.empId || u.id).padStart(4, '0')}`,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      email: u.email,
+      userStatus: u.status || (u.isActive ? 'ACTIVE' : 'INACTIVE'),
+      userGender: u.gender,
+      designationName: u.designationName || '',
+    }));
+  } catch (err: any) {
+    if (err.response?.status === 404) return [];
+    throw err;
+  }
 }

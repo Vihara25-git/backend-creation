@@ -5,12 +5,13 @@ import { Button } from '../ui/Button';
 import { useApp } from '../../context/AppContext';
 import QuickAddDefect from '../../pages/QuickAddDefect';
 import QuickAddTestCase from '../../pages/QuickAddTestCase';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import UserDetailsDrawer from '../../pages/UserDetailsDrawer';
 import { usePermission } from '../../context/PermissionContext';
 
 export const Header: React.FC = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const { selectedProjectId, modulesByProject } = useApp();
   const location = useLocation();
   const { can } = usePermission();
@@ -57,6 +58,7 @@ export const Header: React.FC = () => {
 
   const handleLogout = async () => {
     logout();
+    navigate('/login', { replace: true });
   };
 
   useEffect(() => {
@@ -275,17 +277,6 @@ export const Header: React.FC = () => {
                           window.location.reload();
                         }, 500);
                       }}
-                      renderButton={({ onClick, disabled }) => (
-                        <Button
-                          onClick={onClick}
-                          disabled={disabled}
-                          variant="primary"
-                          size="sm"
-                          className="rounded-xl flex items-center mr-2"
-                        >
-                          Add Defect
-                        </Button>
-                      )}
                     />
                   </div>
                 )}
@@ -293,17 +284,6 @@ export const Header: React.FC = () => {
                   <div className="flex items-center">
                     <QuickAddTestCase
                       selectedProjectId={selectedProjectId || ''}
-                      renderButton={({ onClick, disabled }) => (
-                        <Button
-                          onClick={onClick}
-                          disabled={disabled}
-                          variant="primary"
-                          size="sm"
-                          className="rounded-xl flex items-center mr-2"
-                        >
-                          Add Test Case
-                        </Button>
-                      )}
                     />
                   </div>
                 )}
@@ -483,7 +463,9 @@ export const Header: React.FC = () => {
             onClick={() => {
               setShowLogoutDialog(false);
               logout();
+              navigate('/login', { replace: true });
             }}
+            type="button"
           >
             Logout
           </Button>

@@ -16,6 +16,7 @@ import { getDevelopersWithRolesByProjectId } from "../api/bench/projectAllocatio
 import AlertModal from '../components/ui/AlertModal';
 import { getActiveReleasesByProject } from "../api/releaseView/getActiveReleasesByProject";
 import { useAuth } from '../context/AuthContext';
+import AuthService from '../services/authService';
 import { usePermission } from "../context/PermissionContext";
 
 import { getAllSubmoduleAllocatedDevBySubmoduleId } from "../api/subModuleDevAlloc";
@@ -30,6 +31,34 @@ const QuickAddDefect: React.FC<QuickAddDefectProps> = ({ projectModules, onDefec
   const { can } = usePermission();
   const { user, isAuthenticated } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const currentUserFullName = React.useMemo(() => {
+    if (user?.firstName) {
+      const full = `${user.firstName} ${user.lastName || ""}`.trim();
+      if (full && full !== "User") return full;
+    }
+    if ((user as any)?.employeeName) return (user as any).employeeName;
+    if ((user as any)?.fullName) return (user as any).fullName;
+    if ((user as any)?.name) return (user as any).name;
+
+    const authId = user?.userId || (user as any)?.employeeId || (user as any)?.id;
+    if (employees && employees.length > 0) {
+      const matchedEmp = employees.find(
+        (e: any) =>
+          (user?.email && e.email?.toLowerCase() === user.email.toLowerCase()) ||
+          (authId && (String(e.id) === String(authId) || String(e.userId) === String(authId)))
+      );
+      if (matchedEmp) {
+        const full = `${matchedEmp.firstName || ""} ${matchedEmp.lastName || ""}`.trim();
+        if (full) return full;
+      }
+    }
+
+    if (user?.username) return user.username;
+    if (user?.email) return user.email.split("@")[0];
+    return AuthService.getCurrentUserFullName() || "Admin SGIC";
+  }, [user, employees]);
+
   const [formData, setFormData] = useState({
     description: "",
     steps: "",
@@ -284,7 +313,7 @@ const isDescriptionOnlyNumber = isOnlyNumberText(formData.description);
       priorityId: "",
       typeId: "",
       assigntoId: "",
-      assignbyId: "",
+      assignbyId: currentUserFullName,
       releaseId: "",
       attachment: "",
       statusId: "",
@@ -356,17 +385,21 @@ const isDescriptionOnlyNumber = isOnlyNumberText(formData.description);
     setSuccess(true);
 
     const payload: any = {
+      projectId: Number(selectedProjectId),
+      moduleId: Number(formData.moduleId),
       description: formData.description,
       stepsToRecreation: formData.steps,
       expectedResult: "",
       actualResult: "",
-      isAddTestCase: formData.testCaseRequired,
+      testCaseRequired: Boolean(formData.testCaseRequired),
+      isAddTestCase: Boolean(formData.testCaseRequired),
       subModuleId: formData.subModuleId ? Number(formData.subModuleId) : null,
       severityId: Number(formData.severityId),
       priorityId: Number(formData.priorityId),
       defectTypeId: Number(formData.typeId),
       releaseId: formData.releaseId ? Number(formData.releaseId) : null,
       assignedTo: formData.assigntoId ? Number(formData.assigntoId) : null,
+      enterBy: currentUserFullName,
     };
 
     try {
@@ -698,6 +731,18 @@ const isDescriptionOnlyNumber = isOnlyNumberText(formData.description);
                   </option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Entered By
+              </label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed text-gray-700 font-medium"
+                value={currentUserFullName}
+                readOnly
+                disabled
+              />
             </div>
           </div>
 

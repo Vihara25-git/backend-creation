@@ -31,95 +31,143 @@ export const SmtpServerTab: React.FC = () => {
     loadConfigs();
   }, []);
 
+  const sortConfigs = (list: SmtpConfig[]): SmtpConfig[] => {
+    return [...list].sort((a, b) => {
+      const aActive = a.isEnabled ? 1 : 0;
+      const bActive = b.isEnabled ? 1 : 0;
+      if (bActive !== aActive) {
+        return bActive - aActive;
+      }
+      return (a.id ?? 0) - (b.id ?? 0);
+    });
+  };
+
   const loadConfigs = async () => {
-  try {
-    const data = await getSmtpConfigs();
+    try {
+      const data = await getSmtpConfigs();
 
-    const mappedData = data.map((item: any) => ({
-      ...item,
-      isEnabled: item.isEnabled ?? item.is_enabled ?? false,
-    }));
+      const mappedData = data.map((item: any) => ({
+        ...item,
+        isEnabled: item.isEnabled ?? item.is_enabled ?? false,
+      }));
 
-    setConfigs(mappedData);
-  } catch (error) {
-    console.error("Error loading SMTP configs:", error);
-    setConfigs([]);
-  }
-};
- const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setLoading(true);
-  try {
-    if (editingConfig) {
-      
-      await updateSmtpConfig(editingConfig.id, formData);
-      showToast('Configuration updated successfully', 'success');
-    } else {
-      
-      await createSmtpConfig(formData);
-      showToast('Configuration created successfully', 'success');
+      setConfigs(sortConfigs(mappedData));
+    } catch (error) {
+      console.error("Error loading SMTP configs:", error);
+      setConfigs([]);
     }
-    await loadConfigs();
-    resetForm();
-    setModalOpen(false);
-  } catch (error) {
-    console.error('Error saving SMTP config:', error);
-    showToast('Failed to save configuration', 'error');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (editingConfig) {
+        await updateSmtpConfig(editingConfig.id, formData);
+        showToast('Configuration updated successfully', 'success');
+      } else {
+        await createSmtpConfig(formData);
+        showToast('Configuration created successfully', 'success');
+      }
+      await loadConfigs();
+      resetForm();
+      setModalOpen(false);
+    } catch (error: any) {
+      console.error('Error saving SMTP config:', error);
+      const backendMessage =
+        error?.response?.data?.data?.[0]?.message ||
+        error?.response?.data?.statusMessage ||
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to save configuration';
+      showToast(backendMessage, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDelete = async () => {
-  if (!deleteTarget) return;
+    if (!deleteTarget) return;
 
-  setLoading(true);
+    if (deleteTarget.isEnabled) {
+      showToast(
+        "An enabled SMTP Server cannot be deleted. Please disable it first.",
+        "error"
+      );
+      setDeleteTarget(null);
+      return;
+    }
 
-  try {
-    const response = await deleteSmtpConfig(deleteTarget.id);
+    setLoading(true);
 
-    await loadConfigs();
-    setDeleteTarget(null);
+    try {
+      const response = await deleteSmtpConfig(deleteTarget.id);
 
-    showToast(
-      response?.message || 'Configuration deleted successfully',
-      'success'
-    );
+      await loadConfigs();
+      setDeleteTarget(null);
 
-  } catch (error: any) {
-    console.error('Error deleting SMTP config:', error);
+      showToast(
+        response?.message || 'Configuration deleted successfully',
+        'success'
+      );
 
-    const backendMessage =
-      error?.response?.data?.message ||
-      error?.response?.data?.error ||
-      error?.message ||
-      'Failed to delete configuration';
-    setDeleteTarget(null);
-    showToast(backendMessage, 'error');
+    } catch (error: any) {
+      console.error('Error deleting SMTP config:', error);
 
-  } finally {
-    setLoading(false);
-  }
-};
-const handleToggleStatus = async (config: SmtpConfig) => {
-  const newStatus = !config.isEnabled;
+      const backendMessage =
+        error?.response?.data?.data?.[0]?.message ||
+        error?.response?.data?.statusMessage ||
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to delete configuration';
+      setDeleteTarget(null);
+      showToast(backendMessage, 'error');
 
-  setSavingStates(prev => ({ ...prev, [config.id]: true }));
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  try {
-    await updateSmtpConfigStatus(config.id, newStatus);
-    await loadConfigs();
+  const handleToggleStatus = async (config: SmtpConfig) => {
+    const newStatus = !config.isEnabled;
 
-    showToast(
-      `SMTP configuration ${newStatus ? "enabled" : "disabled"} successfully`,
-      "success"
-    );
-  } catch (error) {
-    showToast("Failed to update SMTP status", "error");
-  } finally {
-    setSavingStates(prev => ({ ...prev, [config.id]: false }));
-  }
-};
+    setSavingStates(prev => ({ ...prev, [config.id]: true }));
+
+    // Optimistically update list: only one can be enabled at a time, and it moves to the top
+    setConfigs(prev => {
+      const updated = prev.map(item => {
+        if (item.id === config.id) {
+          return { ...item, isEnabled: newStatus };
+        }
+        if (newStatus) {
+          return { ...item, isEnabled: false };
+        }
+        return item;
+      });
+      return sortConfigs(updated);
+    });
+
+    try {
+      await updateSmtpConfigStatus(config.id, newStatus);
+      await loadConfigs();
+
+      showToast(
+        `SMTP configuration ${newStatus ? "enabled" : "disabled"} successfully`,
+        "success"
+      );
+    } catch (error: any) {
+      await loadConfigs();
+      const backendMessage =
+        error?.response?.data?.data?.[0]?.message ||
+        error?.response?.data?.statusMessage ||
+        error?.response?.data?.message ||
+        'Failed to update SMTP status';
+      showToast(backendMessage, "error");
+    } finally {
+      setSavingStates(prev => ({ ...prev, [config.id]: false }));
+    }
+  };
 
   const handleEdit = (config: SmtpConfig) => {
     setEditingConfig(config);
@@ -220,9 +268,9 @@ const handleToggleStatus = async (config: SmtpConfig) => {
             <span className="truncate">{config.fromEmail}</span>
           </div>
 
-          {}
+          {/* SMTP Email */}
           <div className="text-sm text-gray-900 truncate">
-            {config.smtpHost}
+            {config.username || config.smtpHost}
           </div>
 
           {}
@@ -264,7 +312,29 @@ const handleToggleStatus = async (config: SmtpConfig) => {
             )}
 
             {can.emailConfig.delete && (
-              <button onClick={() => setDeleteTarget(config)} className="text-red-600 hover:text-red-700">
+              <button
+                onClick={() => {
+                  if (config.isEnabled) {
+                    showToast(
+                      "An enabled SMTP Server cannot be deleted. Please disable it first.",
+                      "error"
+                    );
+                    return;
+                  }
+                  setDeleteTarget(config);
+                }}
+                disabled={config.isEnabled}
+                title={
+                  config.isEnabled
+                    ? "An enabled SMTP Server cannot be deleted. Please disable it first."
+                    : "Delete Configuration"
+                }
+                className={
+                  config.isEnabled
+                    ? "text-gray-300 cursor-not-allowed opacity-50"
+                    : "text-red-600 hover:text-red-700 cursor-pointer"
+                }
+              >
                 <Trash2 className="w-5 h-5" />
               </button>
             )}
@@ -307,11 +377,25 @@ const handleToggleStatus = async (config: SmtpConfig) => {
 
       {}
       <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Configuration">
-        <p className="text-gray-600 mb-4">Are you sure you want to delete <span className="font-medium">{deleteTarget?.name}</span>? This action cannot be undone.</p>
-        <div className="flex justify-end space-x-3">
-          <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button onClick={handleDelete} className="bg-red-600 hover:bg-red-700">{loading ? 'Deleting...' : 'Delete'}</Button>
-        </div>
+        {deleteTarget?.isEnabled ? (
+          <div className="space-y-4">
+            <div className="flex items-center p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+              <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+              <span>An enabled SMTP Server cannot be deleted. Please disable it first.</span>
+            </div>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => setDeleteTarget(null)}>Close</Button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <p className="text-gray-600 mb-4">Are you sure you want to delete <span className="font-medium">{deleteTarget?.name}</span>? This action cannot be undone.</p>
+            <div className="flex justify-end space-x-3">
+              <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+              <Button onClick={handleDelete} className="bg-red-600 hover:bg-red-700">{loading ? 'Deleting...' : 'Delete'}</Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

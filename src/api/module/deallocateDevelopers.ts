@@ -1,15 +1,17 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
+import { deAllocateProjectEmployeeFromSubModule } from "../subModuleDevAlloc";
 
 export const deallocateModuleLeaderWithAllocateModuleId = async (allocateModuleId: number) => {
   return { status: 'success', message: 'Deallocated successfully', data: { allocateModuleId } };
 };
 
 export const deallocateDeveloperFromModule = async (
-  projectId: number,
+  _projectId: number,
   moduleId: number,
   userId: number
 ) => {
-  return { status: 'success', message: 'Developer deallocated from module', data: { projectId, moduleId, userId } };
+  const response = await apiClient.delete(`/api/v1/module/${moduleId}/employee/${userId}`);
+  return { status: 'success', message: 'Developer deallocated from module', data: response.data };
 };
 
 export const deallocateSubmoduleDeveloperWithAllocateModuleId = async (
@@ -19,12 +21,12 @@ export const deallocateSubmoduleDeveloperWithAllocateModuleId = async (
 };
 
 export const deallocateDeveloperFromSubmodule = async (
-  projectId: number,
+  _projectId: number,
   moduleId: number,
   submoduleId: number,
   userId: number
 ) => {
-  return { status: 'success', message: 'Developer deallocated from submodule', data: { projectId, moduleId, submoduleId, userId } };
+  return await deAllocateProjectEmployeeFromSubModule(submoduleId, userId, moduleId);
 };
 
 export const reassignDeveloperWithAllocateModuleId = async (
@@ -51,11 +53,11 @@ export const reassignDeveloperToModule = async (
 };
 
 export const reassignDeveloperToSubmodule = async (
-  projectId: number,
-  moduleId: number,
-  submoduleId: number,
+  _projectId: number,
+  _moduleId: number,
+  _submoduleId: number,
   oldUserId: number,
   newUserId: number
 ) => {
-  return { status: 'success', message: 'Developer reassigned to submodule', data: { projectId, moduleId, submoduleId, oldUserId, newUserId } };
+  return { status: 'success', message: 'Developer reassigned to submodule', data: { oldUserId, newUserId } };
 };

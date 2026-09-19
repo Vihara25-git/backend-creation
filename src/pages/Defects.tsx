@@ -57,10 +57,11 @@ import { getDefectSeveritySummary } from "../api/dashboard/dash_get";
 import { getDevelopersWithRolesByProjectId } from "../api/bench/projectAllocation";
 import { getActiveRelease } from "../api/releaseView/getActiveRelease";
 import { useAuth } from "../context/AuthContext";
+import AuthService from "../services/authService";
 import { createComment } from "../api/comment/createComment";
 import { updateComment } from "../api/comment/createComment";
 import { getCommentsByDefectId } from "../api/comment/comment";
-import { mockDb } from "../mock/mockData";
+import apiClient from "../lib/api";
 import { usePermission } from "../context/PermissionContext";
 import { useAccessibleProjects } from "../api/useAccessibleProjects";
 import { useSearchParams } from 'react-router-dom';
@@ -122,8 +123,8 @@ export const Defects: React.FC = () => {
     setSelectedProjectId: setGlobalProjectId,
     employees,
   } = useApp();
+  const { user } = useAuth();
 
-  
   const [selectedProjectId, setSelectedProjectIdLocal] = React.useState<
     string | null
   >(projectId || null);
@@ -187,9 +188,9 @@ export const Defects: React.FC = () => {
         throw new Error('Please select a developer to reassign to.');
       }
 
-      defectIds.forEach((id: any) => {
-        mockDb.updateDefect(Number(id), { assignedToId: Number(assignedToId) });
-      });
+      for (const id of defectIds) {
+        await updateDefectById(Number(id), { assignedTo: Number(assignedToId) });
+      }
 
       const successMessage = `Successfully reassigned ${defectIds.length} defect(s)`;
       showAlert(`✅ ${successMessage}`);
@@ -243,6 +244,46 @@ export const Defects: React.FC = () => {
   const [activeRelease, setActiveRelease] = React.useState<any>(null);
 
   const [releasesData, setReleasesData] = useState<ProjectRelease[]>([]);
+
+  const [userList, setUserList] = React.useState<
+    { id: number; firstName: string; lastName: string }[]
+  >([]);
+
+  const currentUserFullName = React.useMemo(() => {
+    if (user?.firstName) {
+      const full = `${user.firstName} ${user.lastName || ""}`.trim();
+      if (full && full !== "User") return full;
+    }
+    if ((user as any)?.employeeName) return (user as any).employeeName;
+    if ((user as any)?.fullName) return (user as any).fullName;
+    if ((user as any)?.name) return (user as any).name;
+
+    const authId = user?.userId || (user as any)?.employeeId || (user as any)?.id;
+    if (authId && userList && userList.length > 0) {
+      const matched = userList.find((u) => String(u.id) === String(authId));
+      if (matched) {
+        const full = `${matched.firstName || ""} ${matched.lastName || ""}`.trim();
+        if (full) return full;
+      }
+    }
+
+    if (employees && employees.length > 0) {
+      const matchedEmp = employees.find(
+        (e: any) =>
+          (user?.email && e.email?.toLowerCase() === user.email.toLowerCase()) ||
+          (authId && (String(e.id) === String(authId) || String(e.userId) === String(authId)))
+      );
+      if (matchedEmp) {
+        const full = `${matchedEmp.firstName || ""} ${matchedEmp.lastName || ""}`.trim();
+        if (full) return full;
+      }
+    }
+
+    if (user?.username) return user.username;
+    if (user?.email) return user.email.split("@")[0];
+    return AuthService.getCurrentUserFullName() || "Admin SGIC";
+  }, [user, userList, employees]);
+
   const [formData, setFormData] = useState({
     defectId: "",
     id: "",
@@ -394,7 +435,14 @@ export const Defects: React.FC = () => {
 
   const loadWorkflowStartStatus = async () => {
     try {
-      const statuses = mockDb.getStatuses();
+      const startRes = await apiClient.get('/api/v1/status/workflow/start').catch(() => null);
+      const startId = startRes?.data?.data || startRes?.data;
+      if (startId) {
+        setWorkflowStartStatusId(String(startId));
+        return;
+      }
+      const res = await getAllDefectStatuses();
+      const statuses = res.content || [];
       if (statuses.length > 0) {
         setWorkflowStartStatusId(statuses[0].id.toString());
       }
@@ -405,6 +453,14 @@ export const Defects: React.FC = () => {
 
   useEffect(() => {
     loadWorkflowStartStatus();
+    const handleRefresh = () => {
+      fetchDefectStatuses();
+      loadWorkflowStartStatus();
+    };
+    window.addEventListener("refreshDefectStatuses", handleRefresh);
+    return () => {
+      window.removeEventListener("refreshDefectStatuses", handleRefresh);
+    };
   }, []);
   const commentsContainerRef = React.useRef<HTMLDivElement>(null);
 
@@ -629,7 +685,12 @@ const formatTimeWithoutMs = (timeStr: string) => {
 
       // Assigned fields
       assigned_to_name: d.assignedToName || "",
-      assigned_by_name: d.createdByName || d.createdBy,
+      assigned_by_name: (() => {
+        const raw = d.enterBy || d.enteredBy || d.createdByName || d.createdBy || d.assignedByName || "";
+        if (!raw) return "";
+        if (raw.toLowerCase() === "admin") return "Admin SGIC";
+        return raw;
+      })(),
       assigned_to_id: d.assignedToId,
       assigned_by_id: d.assignedById,
 
@@ -900,9 +961,9 @@ const filteredDefects = backendDefects.filter((d) => {
       const response = await getNextStatuses(fromStatusId);
 
       const mappedStatuses = (response.data || []).map((item: any) => ({
-        id: item.toStatus.id,
-        statusName: item.toStatus.name,
-        colorCode: item.toStatus.color,
+        id: item.id || item.toStatus?.id,
+        statusName: item.statusName || item.name || item.toStatus?.name || "",
+        colorCode: item.colorCode || item.color || item.toStatus?.color || "#808080",
       }));
 
       setNextStatuses(mappedStatuses);
@@ -944,19 +1005,24 @@ const filteredDefects = backendDefects.filter((d) => {
     // Build payload according to the API specification
 
     const payload: any = {
+      projectId: Number(selectedProjectId),
+      moduleId: Number(formData.moduleId),
       description: formData.description,
       stepsToRecreation: formData.steps,
       expectedResult: "",
       actualResult: "",
-      isAddTestCase: formData.testCaseRequired,
-      subModuleId: Number(formData.subModuleId),
+      testCaseRequired: Boolean(formData.testCaseRequired),
+      isAddTestCase: Boolean(formData.testCaseRequired),
+      subModuleId: formData.subModuleId ? Number(formData.subModuleId) : null,
       severityId: Number(formData.severityId),
       priorityId: Number(formData.priorityId),
+      statusTypeId: workflowStartStatusId ? Number(workflowStartStatusId) : null,
 
       defectTypeId: Number(formData.typeId),
-      releaseId: Number(formData.releaseId),
+      releaseId: formData.releaseId ? Number(formData.releaseId) : null,
 
       assignedTo: formData.assigntoId ? Number(formData.assigntoId) : null,
+      enterBy: currentUserFullName,
 
       testCaseId: formData.testCaseId ? Number(formData.testCaseId) : null,
     };
@@ -1121,17 +1187,19 @@ const filteredDefects = backendDefects.filter((d) => {
         // Use the new payload structure as per backend requirements
         // Use selected next status if available, otherwise keep original status
         const payload = {
+          projectId: Number(selectedProjectId),
+          moduleId: Number(formData.moduleId),
           description: formData.description,
           stepsToRecreation: formData.steps,
           expectedResult: "",
           actualResult: "",
           isAddTestCase: formData.testCaseRequired,
-          subModuleId: Number(formData.subModuleId),
+          subModuleId: formData.subModuleId ? Number(formData.subModuleId) : null,
           severityId: Number(formData.severityId),
           priorityId: Number(formData.priorityId),
           statusId: Number(formData.statusId),
           defectTypeId: Number(formData.typeId),
-          releaseId: Number(formData.releaseId),
+          releaseId: formData.releaseId ? Number(formData.releaseId) : null,
           assignedTo: formData.assigntoId ? Number(formData.assigntoId) : null,
           testCaseId: formData.testCaseId ? Number(formData.testCaseId) : null,
           removeAttachment:
@@ -1437,7 +1505,8 @@ const filteredDefects = backendDefects.filter((d) => {
     setStatusError(null);
 
     try {
-      const statusData = mockDb.getStatuses();
+      const res = await getAllDefectStatuses();
+      const statusData = res.content || [];
       const mappedStatuses = statusData.map((s: any) => ({
         id: s.id,
         statusName: s.name || s.statusName,
@@ -1574,10 +1643,10 @@ const filteredDefects = backendDefects.filter((d) => {
       priorityId: "",
       typeId: "",
       assigntoId: "",
-      assignbyId: "",
+      assignbyId: currentUserFullName,
       releaseId: "",
       attachment: "",
-      statusId: "",
+      statusId: workflowStartStatusId || "",
       testCaseId: "",
       testCaseRequired: false,
     });
@@ -2537,7 +2606,9 @@ const filteredDefects = backendDefects.filter((d) => {
 
     setIsExporting(true);
     try {
-      const defectsList = mockDb.getDefects(Number(selectedProjectId));
+      const pId = Number(selectedProjectId);
+      const res = await filterDefects({ projectId: pId }, 0, 1000);
+      const defectsList = res?.data?.content || [];
       const headers = ["Defect ID", "Title", "Severity", "Priority", "Status", "Module", "Assigned To"];
       const rows = defectsList.map(d => [
         d.defectId,
@@ -2593,11 +2664,6 @@ const filteredDefects = backendDefects.filter((d) => {
     );
     setEditingStatusId(null);
   };
-
-  
-  const [userList, setUserList] = React.useState<
-    { id: number; firstName: string; lastName: string }[]
-  >([]);
 
 const uniqueEnteredByNames = React.useMemo(() => {
   const names = new Set<string>();
@@ -3102,8 +3168,6 @@ React.useEffect(() => {
       .catch(() => setActiveRelease(null));
   }, [selectedProjectId]);
   console.log("defectSeveritySummary", defectSeveritySummary);
-  const { user } = useAuth();
-  
 
   const [commentsCountByDefectId, setCommentsCountByDefectId] = useState<
     Record<string, number>
@@ -3550,7 +3614,18 @@ React.useEffect(() => {
               Export to Excel
             </button>
             {can.defect.create && (
-              <Button onClick={() => setIsModalOpen(true)} icon={Plus}>
+              <Button
+                onClick={() => {
+                  setEditingDefect(null);
+                  setFormData((prev) => ({
+                    ...prev,
+                    statusId: workflowStartStatusId || "",
+                    assignbyId: currentUserFullName,
+                  }));
+                  setIsModalOpen(true);
+                }}
+                icon={Plus}
+              >
                 Add Defect
               </Button>
             )}
@@ -4067,7 +4142,15 @@ React.useEffect(() => {
                         </div>
                         {can.defect.create && (
                           <Button
-                            onClick={() => setIsModalOpen(true)}
+                            onClick={() => {
+                              setEditingDefect(null);
+                              setFormData((prev) => ({
+                                ...prev,
+                                statusId: workflowStartStatusId || "",
+                                assignbyId: currentUserFullName,
+                              }));
+                              setIsModalOpen(true);
+                            }}
                             icon={Plus}
                           >
                             Add Defect
@@ -4513,8 +4596,18 @@ React.useEffect(() => {
                       ))}
                     </select>
                   </div>
-
-                  {}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Entered By
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed text-gray-700 font-medium"
+                      value={currentUserFullName}
+                      readOnly
+                      disabled
+                    />
+                  </div>
                 </>
               )}
 
@@ -4532,9 +4625,10 @@ React.useEffect(() => {
                     </label>
                     <select
                       value={selectedNextStatusId || formData.statusId}
-                      onChange={(e) =>
-                        handleInputChange("statusId", e.target.value)
-                      }
+                      onChange={(e) => {
+                        setSelectedNextStatusId(e.target.value);
+                        handleInputChange("statusId", e.target.value);
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       disabled={
                         isNextStatusLoading ||
@@ -4552,7 +4646,7 @@ React.useEffect(() => {
                           "Current Status";
                         return (
                           <option value={originalStatusId}>
-                            {currentStatusName}
+                            {currentStatusName} (Current)
                           </option>
                         );
                       })()}
@@ -4567,6 +4661,16 @@ React.useEffect(() => {
                           </option>
                         ))}
                     </select>
+                    {!isNextStatusLoading && nextStatuses.length === 0 && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        No further status transitions configured in the workflow.
+                      </p>
+                    )}
+                    {!isNextStatusLoading && nextStatuses.length > 0 && (
+                      <p className="text-xs text-blue-600 mt-1">
+                        Allowed next: {nextStatuses.map((s) => s.statusName).join(", ")}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -4613,8 +4717,8 @@ React.useEffect(() => {
                     </label>
                     <input
                       type="text"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
-                      value={editingDefect?.assigned_by_name || "-"}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed text-gray-700 font-medium"
+                      value={editingDefect?.assigned_by_name || currentUserFullName || "-"}
                       readOnly
                       disabled
                     />
@@ -4759,11 +4863,43 @@ React.useEffect(() => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       Status
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {renderColoredSpan(
-                        viewingDefectDetails.status,
-                        getStatusColor(viewingDefectDetails.status),
-                      )}
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col gap-2">
+                        <div>
+                          {renderColoredSpan(
+                            viewingDefectDetails.status,
+                            getStatusColor(viewingDefectDetails.status),
+                          )}
+                        </div>
+                        {defectStatuses.length > 1 && (
+                          <div className="mt-1">
+                            <div className="text-xs text-gray-500 mb-1 font-medium">Workflow Status Flow:</div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {defectStatuses.map((st: any, sIdx: number) => {
+                                const isCurrent = (st.statusName || "").toLowerCase() === (viewingDefectDetails.status || "").toLowerCase();
+                                return (
+                                  <React.Fragment key={st.id || sIdx}>
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-xs font-medium border ${
+                                        isCurrent
+                                          ? "ring-2 ring-blue-500 shadow-sm font-semibold"
+                                          : "opacity-60 bg-gray-50 text-gray-600 border-gray-200"
+                                      }`}
+                                      style={isCurrent ? { backgroundColor: st.colorCode ? `${st.colorCode}20` : '#eff6ff', color: st.colorCode || '#1d4ed8', borderColor: st.colorCode || '#93c5fd' } : undefined}
+                                    >
+                                      {st.statusName}
+                                      {isCurrent && " (Current)"}
+                                    </span>
+                                    {sIdx < defectStatuses.length - 1 && (
+                                      <span className="text-gray-400 text-xs font-bold">→</span>
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                   <tr className="hover:bg-gray-50">

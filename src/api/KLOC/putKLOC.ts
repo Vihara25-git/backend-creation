@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export interface CalculateKlocRequest {
   backendRepo: string;
@@ -29,29 +29,64 @@ export interface UpdateKlocResponse {
   };
 }
 
-export const updateProjectKloc = async (projectId: number, kloc: number): Promise<UpdateKlocResponse> => {
-  mockDb.updateProject(projectId, { kloc });
+export const createProjectKloc = async (projectId: number, kloc: number): Promise<UpdateKlocResponse> => {
+  const response = await apiClient.post(`/api/v1/project/${projectId}/kloc`, {
+    kloc,
+  });
+  const resData = response.data?.data ?? response.data;
+
   return {
     status: 'success',
-    statusCode: 200,
-    statusMessage: 'Project KLOC updated successfully',
+    statusCode: response.status || 201,
+    statusMessage: 'Project KLOC created successfully',
     data: {
-      kiloOfCode: kloc,
+      kiloOfCode: typeof resData === 'number' ? resData : (resData?.kloc || kloc),
     },
   };
 };
 
-export const calculateKlocFromGithub = async (_payload: CalculateKlocRequest): Promise<CalculateKlocResponse> => {
+export const updateProjectKloc = async (projectId: number, kloc: number): Promise<UpdateKlocResponse> => {
+  const response = await apiClient.patch(`/api/v1/project/${projectId}/kloc`, {
+    kloc,
+  });
+  const resData = response.data?.data ?? response.data;
+
   return {
     status: 'success',
-    statusCode: 200,
+    statusCode: response.status || 200,
+    statusMessage: 'Project KLOC updated successfully',
+    data: {
+      kiloOfCode: typeof resData === 'number' ? resData : (resData?.kloc || kloc),
+    },
+  };
+};
+
+export const deleteProjectKloc = async (projectId: number): Promise<{ status: string; message: string }> => {
+  const response = await apiClient.delete(`/api/v1/project/${projectId}/kloc`);
+  return {
+    status: 'success',
+    message: response.data?.statusMessage || 'Project KLOC deleted successfully',
+  };
+};
+
+export const calculateKlocFromGithub = async (
+  payload: CalculateKlocRequest,
+  projectId?: number
+): Promise<CalculateKlocResponse> => {
+  const pId = projectId || 1;
+  const response = await apiClient.post(`/api/v1/project/${pId}/calculate-kloc`, payload);
+  const resData = response.data?.data || response.data;
+
+  return {
+    status: 'success',
+    statusCode: response.status || 200,
     statusMessage: 'KLOC calculated from GitHub successfully',
     data: {
-      backendLOC: 32450,
-      frontendLOC: 18200,
-      backendKLOC: 32.45,
-      frontendKLOC: 18.2,
-      totalKLOC: 50.65,
+      backendLOC: resData?.backendLOC || 0,
+      frontendLOC: resData?.frontendLOC || 0,
+      backendKLOC: resData?.backendKLOC || 0,
+      frontendKLOC: resData?.frontendKLOC || 0,
+      totalKLOC: resData?.totalKLOC || 0,
     },
   };
 };

@@ -12,7 +12,13 @@ import { createTestCase } from "../api/testCase/createTestcase";
 import { usePermission } from "../context/PermissionContext";
 
 
-const QuickAddTestCase: React.FC<{ selectedProjectId: string, onTestCaseAdded?: () => void }> = ({ selectedProjectId, onTestCaseAdded }) => {
+interface QuickAddTestCaseProps {
+  selectedProjectId: string;
+  onTestCaseAdded?: () => void;
+  renderButton?: (props: { onClick: () => void; disabled: boolean }) => React.ReactNode;
+}
+
+const QuickAddTestCase: React.FC<QuickAddTestCaseProps> = ({ selectedProjectId, onTestCaseAdded, renderButton }) => {
   const { projects } = useApp();
   const {can} = usePermission();
   const [modal, setModal] = useState({
@@ -108,6 +114,8 @@ const QuickAddTestCase: React.FC<{ selectedProjectId: string, onTestCaseAdded?: 
       detailsSteps: formData.steps,
       severityId: selectedSeverity.id,
       defectTypeId: selectedDefectType.id,
+      projectId: Number(selectedProjectId),
+      moduleId: Number(formData.moduleId),
     };
 
     console.log('Quick Add - subModuleId:', subModuleId, 'payload:', payload);
@@ -367,47 +375,68 @@ const QuickAddTestCase: React.FC<{ selectedProjectId: string, onTestCaseAdded?: 
       />
       
       <div>
-        {can.testCase.create && <div className="relative flex items-center w-44 h-12">
-          <span className="absolute left-0 flex items-center justify-center w-12 h-12 rounded-lg bg-blue-500 shadow-md">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="lucide lucide-clipboard-check"
-              style={{ color: '#fff' }}
-            >
-              <rect x="9" y="2" width="6" height="4" rx="1" />
-              <path d="M9 4H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2" />
-              <path d="m9 14 2 2 4-4" stroke="#22c55e" />
-            </svg>
-          </span>
-          <Button
-            onClick={() => {
-              setModal({
-                open: true,
-                formData: {
-                  moduleId: "",
-                  subModuleId: "",
-                  description: "",
-                  steps: "",
-                  type: "",
-                  severity: "",
-                },
-              });
-            }}
-            className="pl-14 pr-4 py-1 bg-white rounded-xl shadow border border-gray-200 w-full h-12 flex items-center font-semibold text-gray-900 hover:shadow-lg hover:bg-gray-50 transition-all justify-start"
-            disabled={!selectedProjectId}
-            style={{ fontWeight: 500, borderStyle: 'solid' }}
-          >
-            <span className="text-base font-medium text-gray-900 whitespace-nowrap">Add Test Case</span>
-          </Button>
-        </div>}
+        {can.testCase.create && (
+          renderButton ? (
+            renderButton({
+              onClick: () => {
+                setModal({
+                  open: true,
+                  formData: {
+                    moduleId: "",
+                    subModuleId: "",
+                    description: "",
+                    steps: "",
+                    type: "",
+                    severity: "",
+                  },
+                });
+              },
+              disabled: !selectedProjectId,
+            })
+          ) : (
+            <div className="relative flex items-center w-44 h-12">
+              <span className="absolute left-0 flex items-center justify-center w-12 h-12 rounded-lg bg-blue-500 shadow-md">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="lucide lucide-clipboard-check"
+                  style={{ color: '#fff' }}
+                >
+                  <rect x="9" y="2" width="6" height="4" rx="1" />
+                  <path d="M9 4H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2" />
+                  <path d="m9 14 2 2 4-4" stroke="#22c55e" />
+                </svg>
+              </span>
+              <Button
+                onClick={() => {
+                  setModal({
+                    open: true,
+                    formData: {
+                      moduleId: "",
+                      subModuleId: "",
+                      description: "",
+                      steps: "",
+                      type: "",
+                      severity: "",
+                    },
+                  });
+                }}
+                className="pl-14 pr-4 py-1 bg-white rounded-xl shadow border border-gray-200 w-full h-12 flex items-center font-semibold text-gray-900 hover:shadow-lg hover:bg-gray-50 transition-all justify-start"
+                disabled={!selectedProjectId}
+                style={{ fontWeight: 500, borderStyle: 'solid' }}
+              >
+                <span className="text-base font-medium text-gray-900 whitespace-nowrap">Add Test Case</span>
+              </Button>
+            </div>
+          )
+        )}
         
         {modal.open && (
           <Modal

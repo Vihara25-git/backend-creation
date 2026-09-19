@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 interface DefectTypeItem {
   defectTypeName: string;
@@ -19,35 +19,40 @@ export interface DefectTypeResponse {
 }
 
 export async function getDefectTypeByProjectId(
-  _projectId: string
+  projectId: string | number
 ): Promise<DefectTypeResponse> {
-  const defectTypes = mockDb.getDefectTypes();
-  const counts = [6, 12, 4, 2, 3, 5];
+  try {
+    const response = await apiClient.get(`/api/v1/project/${projectId}/dashboard/defect-type`);
+    const resData = response.data?.data || response.data;
 
-  const mapped: DefectTypeItem[] = defectTypes.map((dt, idx) => ({
-    defectTypeName: dt.defectTypeName,
-    defectCount: counts[idx] || 3,
-    percentage: 0,
-  }));
+    const rawList = Array.isArray(resData?.defectTypes) ? resData.defectTypes : [];
+    const defectTypes: DefectTypeItem[] = rawList.map((dt: any) => ({
+      defectTypeName: dt.defectTypeName || dt.name || '',
+      defectCount: Number(dt.defectCount ?? dt.count ?? 0),
+      percentage: Number(dt.percentage ?? 0),
+    }));
 
-  const total = mapped.reduce((sum, item) => sum + item.defectCount, 0);
-  const withPercentages = mapped.map(item => ({
-    ...item,
-    percentage: Number(((item.defectCount / total) * 100).toFixed(1)),
-  }));
-
-  const mostCommon = withPercentages.reduce((prev, current) =>
-    (prev.defectCount > current.defectCount) ? prev : current,
-    { defectTypeName: 'Functional Bug', defectCount: 12, percentage: 37.5 }
-  );
-
-  return {
-    status: 'success',
-    data: {
-      defectTypes: withPercentages,
-      totalDefectCount: total,
-      mostCommonDefectType: mostCommon.defectTypeName,
-      mostCommonDefectCount: mostCommon.defectCount,
-    },
-  };
+    return {
+      status: 'success',
+      statusCode: 200,
+      data: {
+        defectTypes,
+        totalDefectCount: Number(resData?.totalDefectCount ?? 0),
+        mostCommonDefectType: resData?.mostCommonDefectType || '',
+        mostCommonDefectCount: Number(resData?.mostCommonDefectCount ?? 0),
+      },
+    };
+  } catch (err: any) {
+    return {
+      status: 'error',
+      statusCode: err.response?.status || 500,
+      statusMessage: err.message || 'Failed to fetch defect types distribution',
+      data: {
+        defectTypes: [],
+        totalDefectCount: 0,
+        mostCommonDefectType: '',
+        mostCommonDefectCount: 0,
+      },
+    };
+  }
 }

@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { FiEye, FiEyeOff } from "react-icons/fi";
 import { Toast } from '../components/ui/Toast';
+import AuthService from '../services/authService';
 
 interface ChangePasswordSectionProps {
-  userId?: string;
+  userId?: string | number;
+  email?: string;
 }
 
-const ChangePasswordSection: React.FC<ChangePasswordSectionProps> = (user) => {
+const ChangePasswordSection: React.FC<ChangePasswordSectionProps> = ({ userId, email }) => {
   const [showForm, setShowForm] = useState(false);
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -55,6 +57,12 @@ const ChangePasswordSection: React.FC<ChangePasswordSectionProps> = (user) => {
 
     setLoading(true);
     try {
+      await AuthService.changePassword(
+        oldPassword,
+        newPassword,
+        userId ? Number(userId) : undefined,
+        email
+      );
       setToast({
         isOpen: true,
         message: 'Password changed successfully!',
@@ -67,10 +75,13 @@ const ChangePasswordSection: React.FC<ChangePasswordSectionProps> = (user) => {
     } catch (error: any) {
       console.error('Change password error:', error);
 
-      
       let errorMessage = 'Error changing password. Please try again.';
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
+      } else if (error.response?.data?.statusMessage) {
+        errorMessage = error.response.data.statusMessage;
+      } else if (Array.isArray(error.response?.data?.data) && error.response.data.data[0]?.message) {
+        errorMessage = error.response.data.data[0].message;
       } else if (error.response?.status === 400) {
         errorMessage = 'Invalid password or request. Please check your current password.';
       } else if (error.response?.status === 401) {
@@ -213,7 +224,7 @@ const UserDetailsDrawer: React.FC<UserDetailsDrawerProps> = ({ user, onClose }) 
           <p className="text-sm text-gray-700"><span className="font-semibold">Email:</span> {user?.email || 'N/A'}</p>
           <hr className="my-4" />
           <h3 className="text-md font-semibold text-gray-800 mb-2">Change Password</h3>
-          <ChangePasswordSection userId={user?.userId} />
+          <ChangePasswordSection userId={user?.userId} email={user?.email} />
         </div>
       </div>
     </div>

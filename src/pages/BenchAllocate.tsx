@@ -513,21 +513,35 @@ export default function BenchAllocate() {
       }
 
       const mappedEmployees = benchData
-        .filter(
-          (item: any) =>
-            item.employee?.active === true && item.employee?.designationName,
-        )
-        .map((item: any) => ({
-          id: String(item.employee?.id || item.id),
-          firstName: item.employee?.firstName || item.firstName || "",
-          lastName: item.employee?.lastName || item.lastName || "",
-          email: item.employee?.email || item.email || "",
-          phone: item.employee?.contactNo || item.contactNo || "",
-          designation: item.employee?.designationName || item.designation || "",
-          availability: item.availability || 0,
-          availabilityPeriod: item.availabilityPeriod || "",
-          status: "active",
-        }));
+        .map((item: any) => {
+          const id = String(item.empId || item.employeeId || item.employee?.id || item.id);
+          const fullName =
+            item.employeeName ||
+            (item.employee
+              ? `${item.employee.firstName || ""} ${item.employee.lastName || ""}`.trim()
+              : (item.firstName ? `${item.firstName} ${item.lastName || ""}`.trim() : `Employee ${id}`));
+          const nameParts = fullName.split(" ");
+          const firstName = item.employee?.firstName || item.firstName || nameParts[0] || "";
+          const lastName = item.employee?.lastName || item.lastName || nameParts.slice(1).join(" ") || "";
+          const designation = item.designationName || item.employee?.designationName || item.designation || "Developer";
+          const rawAvail = item.availablePercentage ?? item.availability ?? (100 - (item.totalAllocatedPercentage || 0));
+          const availability = Math.max(0, Math.min(100, Number(rawAvail ?? 100)));
+          const availabilityPeriod = item.availablePeriod
+            ? String(item.availablePeriod).split("T")[0]
+            : (item.availableFrom ? String(item.availableFrom).split("T")[0] : (item.availabilityPeriod || ""));
+
+          return {
+            id,
+            firstName,
+            lastName,
+            email: item.employee?.email || item.email || "",
+            phone: item.employee?.contactNo || item.contactNo || item.phone || "",
+            designation,
+            availability,
+            availabilityPeriod,
+            status: "active",
+          };
+        });
 
       setEmployees(mappedEmployees);
     } catch (error) {
@@ -588,9 +602,10 @@ export default function BenchAllocate() {
 
           
           const mappedAllocations = allocations.map((alloc: any) => ({
-            id: alloc.id,
+            id: alloc.benchAllocationId || alloc.id,
             userFullName:
               alloc.userFullName ||
+              alloc.employeeName ||
               (alloc.firstName
                 ? `${alloc.firstName} ${alloc.lastName}`
                 : alloc.employee?.firstName
@@ -600,12 +615,12 @@ export default function BenchAllocate() {
             lastName: alloc.lastName || alloc.employee?.lastName || "",
             roleName: alloc.roleName || alloc.role?.name || "",
             allocationPercentage:
-              alloc.allocationPercent || alloc.allocationPercentage || 0,
+              alloc.allocationPercent ?? alloc.allocationPercentage ?? alloc.availability ?? 0,
             startDate: alloc.startDate,
             endDate: alloc.endDate,
-            employeeId: alloc.employeeId || alloc.employee?.id,
+            employeeId: alloc.empId || alloc.employeeId || alloc.employee?.id,
             roleId: alloc.roleId || alloc.role?.id,
-            userId: alloc.userId || alloc.employee?.id,
+            userId: alloc.empId || alloc.userId || alloc.employee?.id,
           }));
 
           console.log("Mapped allocations for display:", mappedAllocations);
@@ -1003,58 +1018,9 @@ export default function BenchAllocate() {
   }, [selectedProjectId, projects]);
 
   
-
-  const benchEmployees = useMemo(() => {
-    
-
-    const hasActiveFilters =
-      designationFilter.length > 0 ||
-      availabilityFilter.length > 0 ||
-      fromDateFilter ||
-      toDateFilter;
-
-    if (hasActiveFilters) {
-      
-
-      return employees;
-    }
-
-    
-
-    const allocations = selectedProjectId
-      ? projectAllocations[selectedProjectId] || []
-      : [];
-
-    
-
-    return employees
-      .map((e) => {
-        const allocated = allocations
-
-          .filter((emp: any) => emp.userId === e.id)
-
-          .reduce(
-            (sum: number, emp: any) =>
-              sum + (emp.allocationAvailability || emp.availability),
-            0,
-          );
-
-        const remaining = e.availability - allocated;
-
-        return remaining > 0 ? { ...e, availability: remaining } : null;
-      })
-      .filter((e): e is Employee & { availability: number } => e !== null);
-  }, [
-    employees,
-    projectAllocations,
-    selectedProjectId,
-    designationFilter,
-    availabilityFilter,
-    fromDateFilter,
-    toDateFilter,
-  ]);
-
-  
+  const benchEmployees = useMemo(() => {
+    return employees;
+  }, [employees]);
 
   const filteredBench = useMemo(() => {
     let filtered = benchEmployees;
@@ -1098,15 +1064,13 @@ export default function BenchAllocate() {
     toDateFilter,
   ]);
 
-const allocatedEmployees = useMemo(
-  () =>
-    selectedProjectId
-      ? (projectAllocations[selectedProjectId] || []).filter(
-          (emp: any) => emp.roleId !== 2
-        )
-      : [],
-  [projectAllocations, selectedProjectId],
-);
+  const allocatedEmployees = useMemo(
+    () =>
+      selectedProjectId
+        ? projectAllocations[selectedProjectId] || []
+        : [],
+    [projectAllocations, selectedProjectId],
+  );
   const projectRoleOptions = useMemo(() => {
     const uniqueRoles = new Set<string>();
 
@@ -1220,7 +1184,25 @@ const allocatedEmployees = useMemo(
   // Handlers
 
   const handleAllocate = () => {
-    const toAllocate = employees.filter((e) => selectedBench.includes(e.id));
+    const toAllocate = employees
+      .filter((e) => selectedBench.includes(e.id))
+      .map((e) => {
+        let roleId = e.roleId;
+        if (!roleId && roles.length > 0) {
+          const desig = (e.designation || "").toUpperCase();
+          if (desig.includes("QA LEAD") || desig.includes("LEAD QA")) {
+            const r = roles.find((role) => Number(role.id) === 2 || (role.roleName || "").toUpperCase().includes("QA LEAD"));
+            if (r) roleId = r.id;
+          } else if (desig.includes("QA")) {
+            const r = roles.find((role) => Number(role.id) === 3 || (role.roleName || "").toUpperCase().includes("QA ENGINEER"));
+            if (r) roleId = r.id;
+          }
+        }
+        return {
+          ...e,
+          roleId: roleId || e.roleId,
+        };
+      });
 
     if (toAllocate.length === 0) {
       showToast("Please select employees to allocate", "error");
@@ -1258,6 +1240,9 @@ const allocatedEmployees = useMemo(
             
             await updateProjectAllocation(
               emp.allocationId, {
+              employeeId: emp.employeeId || emp.empId || emp.id,
+              projectId: Number(selectedProjectId),
+              startDate: emp.allocationStartDate,
               endDate: emp.allocationEndDate,
               roleId: emp.roleId,
               allocationPercent: Number(
@@ -1326,20 +1311,25 @@ const allocatedEmployees = useMemo(
 
       
       const mappedAllocations = allocations.map((alloc: any) => ({
-        id: alloc.id,
+        id: alloc.benchAllocationId || alloc.id,
         userFullName:
           alloc.userFullName ||
-          (alloc.firstName ? `${alloc.firstName} ${alloc.lastName}` : ""),
-        firstName: alloc.firstName || "",
-        lastName: alloc.lastName || "",
+          alloc.employeeName ||
+          (alloc.firstName
+            ? `${alloc.firstName} ${alloc.lastName}`
+            : alloc.employee?.firstName
+              ? `${alloc.employee.firstName} ${alloc.employee.lastName}`
+              : "Unknown"),
+        firstName: alloc.firstName || alloc.employee?.firstName || "",
+        lastName: alloc.lastName || alloc.employee?.lastName || "",
         roleName: alloc.roleName || alloc.role?.name || "",
         allocationPercentage:
-          alloc.allocationPercent || alloc.allocationPercentage || 0,
+          alloc.allocationPercent ?? alloc.allocationPercentage ?? alloc.availability ?? 0,
         startDate: alloc.startDate,
         endDate: alloc.endDate,
-        employeeId: alloc.employeeId || alloc.employee?.id,
+        employeeId: alloc.empId || alloc.employeeId || alloc.employee?.id,
         roleId: alloc.roleId || alloc.role?.id,
-        userId: alloc.userId || alloc.employee?.id,
+        userId: alloc.empId || alloc.userId || alloc.employee?.id,
       }));
 
       console.log("Mapped allocations:", mappedAllocations);
@@ -1370,12 +1360,6 @@ const allocatedEmployees = useMemo(
       }
 
       // Refresh data
-      const allocationsData =
-        await getProjectAllocationsById(selectedProjectId);
-      setProjectAllocations((prev) => ({
-        ...prev,
-        [selectedProjectId]: allocationsData.data || [],
-      }));
       await refreshProjectAllocations();
       await fetchBenchEmployees({}, 0, benchPageSize);
       setSelectedProjectUsers([]);
@@ -2362,7 +2346,7 @@ const allocatedEmployees = useMemo(
             </Button>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto overflow-x-auto">
             {paginatedAllocatedEmployees.length === 0 ? (
               <div className="text-gray-400 text-center py-8">
                 {allocatedEmployees.length === 0
@@ -2371,7 +2355,7 @@ const allocatedEmployees = useMemo(
               </div>
             ) : (
               <>
-                <table className="w-full text-center table-fixed">
+                <table className="min-w-full text-center">
                   <thead>
                     <tr className="border-b border-[#D1D5DB]">
                       <th className="py-2 px-4 text-center whitespace-nowrap min-w-[120px]">
@@ -2424,7 +2408,8 @@ const allocatedEmployees = useMemo(
                               e.stopPropagation();
                               
                               const mappedEmp = {
-                                id: emp.id,
+                                id: emp.employeeId || emp.empId || emp.id,
+                                employeeId: emp.employeeId || emp.empId || emp.id,
                                 allocationId: emp.id,
                                 firstName:
                                   emp.userFullName?.split(" ")[0] ||
@@ -2677,7 +2662,7 @@ const allocatedEmployees = useMemo(
                     <option value="">Select Role</option>
 
                     {roles
-                    .filter((role) => role.id !== 1 && role.id !== 2).map((role) => (
+                    .filter((role) => role.id !== 1).map((role) => (
                       <option key={role.id} value={role.id}>
                         {role.roleName}
                       </option>

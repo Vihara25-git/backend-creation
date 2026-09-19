@@ -46,7 +46,7 @@ import {
   reassignSubmoduleDeveloperWithAllocateModuleId,
 } from "../api/module/deallocateDevelopers";
 import { getDefectsByProjectId } from "../api/defect/filterDefectByProject";
-import { mockDb } from "../mock/mockData";
+import apiClient from "../lib/api";
 import { getSubmodulesByModule } from "../api/submodule/getSubmodulesByModule";
 import {
   allocateProjectEmployeeToSubModule,
@@ -127,18 +127,20 @@ export const ModuleManagement: React.FC = () => {
   const [isCreatingSubmodule, setIsCreatingSubmodule] = useState(false);
   const [isUpdatingSubmodule, setIsUpdatingSubmodule] = useState(false);
 
-  // New state for developers with roles
+  // State for project-allocated employees with roles
   const [developersWithRoles, setDevelopersWithRoles] = useState<Array<{
     userWithRole: string;
+    employeeName: string;
+    roleName: string;
+    roleType?: string;
+    designationName?: string;
     projectAllocationId: number;
     userId: number;
     roleId?: number;
   }>>([]);
 
   const [developerRoleNames, setDeveloperRoleNames] = useState<string[]>([]);
-
   const [developerRoleIds, setDeveloperRoleIds] = useState<number[]>([]);
-
   const [moduleLeaderRoleNames, setModuleLeaderRoleNames] = useState<string[]>([]);
   const [moduleLeaderRoleIds, setModuleLeaderRoleIds] = useState<number[]>([]);
 
@@ -153,30 +155,148 @@ export const ModuleManagement: React.FC = () => {
     return normalizeRoleName(parts.slice(1).join("-"));
   };
 
-  const getRoleTypedDevelopers = () => {
-    const allowedRoleIds = new Set(developerRoleIds);
-    const allowedRoleNames = new Set(developerRoleNames.map(normalizeRoleName));
+  const isQaRole = (
+    roleName?: string,
+    roleType?: string,
+    designationName?: string,
+    roleId?: number | string,
+  ): boolean => {
+    const numRoleId = roleId !== undefined && roleId !== null ? Number(roleId) : null;
+    const rName = (roleName || "").trim().toUpperCase();
+    const rType = (roleType || "").trim().toUpperCase();
+    const dName = (designationName || "").trim().toUpperCase();
 
-    return developersWithRoles.filter((dev) => {
-      if (dev.roleId && allowedRoleIds.has(dev.roleId)) {
+    // Explicitly reject Project Manager
+    if (numRoleId === 5 || rType === "PROJECT_MANAGER" || rName.includes("PROJECT MANAGER")) {
+      return false;
+    }
+
+    // Explicitly reject Developer roles
+    if (
+      numRoleId === 2 ||
+      numRoleId === 4 ||
+      rType === "DEVELOPER" ||
+      rType === "SENIOR_DEVELOPER" ||
+      rType === "JUNIOR_DEVELOPER" ||
+      rType === "DEV_LEAD" ||
+      rName === "DEVELOPER" ||
+      rName === "SENIOR DEVELOPER"
+    ) {
+      return false;
+    }
+
+    // Role ID matches QA Lead (1) or QA Engineer (3)
+    if (numRoleId === 1 || numRoleId === 3) {
+      return true;
+    }
+
+    // Role Type matches QA_LEAD or QA_ENGINEER
+    if (rType === "QA_LEAD" || rType === "QA_ENGINEER") {
+      return true;
+    }
+
+    // Role Name matches QA Lead or QA Engineer
+    if (
+      rName === "QA LEAD" ||
+      rName === "QA ENGINEER" ||
+      rName === "QA_LEAD" ||
+      rName === "QA_ENGINEER" ||
+      rName.includes("QA LEAD") ||
+      rName.includes("QA ENGINEER")
+    ) {
+      return true;
+    }
+
+    // General QA keyword match in roleName
+    if (rName.includes("QA") || rName.includes("QUALITY ASSURANCE")) {
+      return true;
+    }
+
+    // Fallback to designation only if role info is absent
+    if (!rName && !rType && !numRoleId) {
+      if (
+        dName.includes("QA") ||
+        dName.includes("QUALITY ASSURANCE") ||
+        dName.includes("TEST")
+      ) {
         return true;
       }
+    }
 
-      return allowedRoleNames.has(getRoleFromUserWithRole(dev.userWithRole));
-    });
+    return false;
+  };
+
+  const isDeveloperRole = (
+    roleName?: string,
+    roleType?: string,
+    designationName?: string,
+    roleId?: number | string,
+  ): boolean => {
+    // Cannot be QA role or Project Manager
+    if (isQaRole(roleName, roleType, designationName, roleId)) {
+      return false;
+    }
+
+    const numRoleId = roleId !== undefined && roleId !== null ? Number(roleId) : null;
+    const rName = (roleName || "").trim().toUpperCase();
+    const rType = (roleType || "").trim().toUpperCase();
+    const dName = (designationName || "").trim().toUpperCase();
+
+    // Reject Project Manager
+    if (numRoleId === 5 || rType === "PROJECT_MANAGER" || rName.includes("PROJECT MANAGER")) {
+      return false;
+    }
+
+    // Developer Role IDs: 2 (Developer), 4 (Senior developer)
+    if (numRoleId === 2 || numRoleId === 4) {
+      return true;
+    }
+
+    // Developer Role Types
+    if (
+      rType === "DEVELOPER" ||
+      rType === "SENIOR_DEVELOPER" ||
+      rType === "JUNIOR_DEVELOPER" ||
+      rType === "DEV_LEAD"
+    ) {
+      return true;
+    }
+
+    // Developer Role Names
+    if (
+      rName.includes("DEVELOPER") ||
+      rName.includes("DEV") ||
+      rName.includes("SOFTWARE") ||
+      rName.includes("PROGRAMMER")
+    ) {
+      return true;
+    }
+
+    // Fallback to designation only if role info is absent
+    if (!rName && !rType && !numRoleId) {
+      if (
+        dName.includes("DEVELOPER") ||
+        dName.includes("DEV") ||
+        dName.includes("SOFTWARE") ||
+        dName.includes("PROGRAMMER")
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const getRoleTypedDevelopers = () => {
+    return developersWithRoles.filter((dev) =>
+      isDeveloperRole(dev.roleName, dev.roleType, dev.designationName, dev.roleId)
+    );
   };
 
   const getRoleTypedModuleLeaders = () => {
-    const allowedRoleIds = new Set(moduleLeaderRoleIds);
-    const allowedRoleNames = new Set(moduleLeaderRoleNames.map(normalizeRoleName));
-
-    return developersWithRoles.filter((dev) => {
-      if (dev.roleId && allowedRoleIds.has(dev.roleId)) {
-        return true;
-      }
-
-      return allowedRoleNames.has(getRoleFromUserWithRole(dev.userWithRole));
-    });
+    return developersWithRoles.filter((dev) =>
+      isQaRole(dev.roleName, dev.roleType, dev.designationName, dev.roleId)
+    );
   };
 
   
@@ -260,17 +380,30 @@ export const ModuleManagement: React.FC = () => {
   const [hasLoadedProjectAllocatedEmployees, setHasLoadedProjectAllocatedEmployees] = useState(false);
   const fetchDevelopersWithRoles = async () => {
     if (!selectedProjectId) return;
-    setHasLoadedProjectAllocatedEmployees(false);
     try {
-      const users = mockDb.getUsers();
-      const mapped = users.map((emp: any) => {
-        const employeeId = emp.id;
+      const res = await apiClient.get(`/api/v1/bench-allocation/${selectedProjectId}/project`);
+      const resData = res.data?.data || res.data;
+      const projectAllocations = Array.isArray(resData) ? resData : [];
+      const mapped = projectAllocations.map((alloc: any) => {
+        const employeeId = alloc.empId || alloc.employeeId;
+        const employeeName = alloc.employeeName || alloc.userFullName || `${alloc.firstName || ''} ${alloc.lastName || ''}`.trim() || 'Employee';
+        const roleName = alloc.roleName || alloc.role?.roleName || alloc.role?.name || '';
+        const roleType = alloc.roleType || alloc.role?.roleType || alloc.role?.type || '';
+        const designationName = alloc.designationName || alloc.designation?.designationName || '';
+        const roleId = alloc.roleId !== undefined && alloc.roleId !== null
+          ? Number(alloc.roleId)
+          : (alloc.role?.roleId !== undefined ? Number(alloc.role?.roleId) : undefined);
+        const projectAllocationId = alloc.benchAllocationId ?? alloc.id;
 
         return {
-          userWithRole: `${emp.firstName} ${emp.lastName}-${emp.roleName || 'Developer'}`,
-          projectAllocationId: emp.id,
+          userWithRole: `${employeeName} - ${roleName || 'Employee'}`,
+          employeeName,
+          roleName,
+          roleType,
+          designationName,
+          projectAllocationId,
           userId: employeeId,
-          roleId: emp.roleId || 1,
+          roleId,
         };
       });
       setDevelopersWithRoles(mapped);
@@ -1202,31 +1335,11 @@ export const ModuleManagement: React.FC = () => {
 
   // Enhanced developer management handlers
   const handleDeallocateDevelopers = async () => {
-    const isModuleSelected = selectedItems.some(
-      (item) => item.type === "module",
-    );
-    const isSubmoduleSelected = selectedItems.some(
-      (item) => item.type === "submodule",
-    );
-
-    
     if (
-      isModuleSelected &&
-      selectedModuleDevelopersForDeallocationBulk.length === 0
-    ) {
-      setToastMessage("Please select developers to deallocate from modules.");
-      setShowToast(true);
-      return;
-    }
-
-    
-    if (
-      isSubmoduleSelected &&
+      selectedModuleDevelopersForDeallocationBulk.length === 0 &&
       selectedDevelopersForDeallocationBulk.length === 0
     ) {
-      setToastMessage(
-        "Please select developers to deallocate from submodules.",
-      );
+      setToastMessage("Please select developers to deallocate.");
       setShowToast(true);
       return;
     }
@@ -1238,9 +1351,7 @@ export const ModuleManagement: React.FC = () => {
 
       for (const item of selectedItems) {
         try {
-          if (item.type === "module") {
-            
-            
+          if (item.type === "module" && selectedModuleDevelopersForDeallocationBulk.length > 0) {
             try {
               const moduleUsers = await getUsersByAllocation(
                 Number(selectedProjectId),
@@ -1249,41 +1360,12 @@ export const ModuleManagement: React.FC = () => {
 
               for (const developerId of selectedModuleDevelopersForDeallocationBulk) {
                 try {
-                  
-                  const selectedUser = moduleUsers.find(
-                    (user) => user.userId === developerId,
+                  await deallocateDeveloperFromModule(
+                    Number(selectedProjectId),
+                    Number(item.moduleId),
+                    developerId,
                   );
-
-                  if (selectedUser && selectedUser.allocateModuleId) {
-                    console.log(
-                      `Deallocating developer ${developerId} from module ${item.moduleId} with allocateModuleId:`,
-                      selectedUser.allocateModuleId,
-                    );
-                    
-                    await deallocateModuleLeaderWithAllocateModuleId(
-                      selectedUser.allocateModuleId,
-                    );
-                    successCount++;
-                  } else {
-                    console.error(
-                      "Cannot deallocate module developer - allocateModuleId not found:",
-                      {
-                        selectedUser,
-                        developerId,
-                        moduleId: item.moduleId,
-                        moduleUsers,
-                        hasAllocateModuleId: selectedUser?.allocateModuleId,
-                      },
-                    );
-
-                    
-                    await deallocateDeveloperFromModule(
-                      Number(selectedProjectId),
-                      Number(item.moduleId),
-                      developerId,
-                    );
-                    successCount++;
-                  }
+                  successCount++;
                 } catch (error) {
                   console.error(
                     `Module deallocation error for developer ${developerId} from module ${item.moduleId}:`,
@@ -1297,7 +1379,6 @@ export const ModuleManagement: React.FC = () => {
                 `Error fetching module allocation data for module ${item.moduleId}:`,
                 error,
               );
-              
               for (const developerId of selectedModuleDevelopersForDeallocationBulk) {
                 try {
                   await deallocateDeveloperFromModule(
@@ -1307,15 +1388,11 @@ export const ModuleManagement: React.FC = () => {
                   );
                   successCount++;
                 } catch (legacyError) {
-                  console.error(
-                    `Legacy module deallocation error for developer ${developerId} from module ${item.moduleId}:`,
-                    legacyError,
-                  );
                   errorCount++;
                 }
               }
             }
-          } else if (item.type === "submodule" && item.submoduleId) {
+          } else if (item.type === "submodule" && item.submoduleId && selectedDevelopersForDeallocationBulk.length > 0) {
             const subModuleId = Number(item.submoduleId);
 
             for (const developerId of selectedDevelopersForDeallocationBulk) {
@@ -1345,10 +1422,13 @@ export const ModuleManagement: React.FC = () => {
           `Successfully deallocated ${successCount} developer(s).${errorCount > 0 ? ` ${errorCount} operation(s) failed.` : ""}`,
         );
         setShowToast(true);
+        setSelectedModuleDevelopersForDeallocationBulk([]);
+        setSelectedDevelopersForDeallocationBulk([]);
+        setActiveSubmoduleSection(null);
+
         await fetchModules();
-        
         await fetchDevelopersWithRoles();
-        
+
         if (selectedItems.length > 0) {
           const moduleItems = selectedItems.filter(
             (item) => item.type === "module",
@@ -1359,7 +1439,18 @@ export const ModuleManagement: React.FC = () => {
 
           if (moduleItems.length > 0) {
             await fetchAllSelectedModulesAllocatedUsers();
-          } else if (submoduleItems.length > 0) {
+            for (const item of moduleItems) {
+              const devs = await getDevelopersByModuleId(
+                Number(selectedProjectId),
+                Number(item.moduleId),
+              );
+              setModuleDevelopers((prev) => ({
+                ...prev,
+                [item.moduleId]: devs,
+              }));
+            }
+          }
+          if (submoduleItems.length > 0) {
             await fetchAllSelectedSubmodulesAllocatedUsers();
             await Promise.all(
               submoduleItems.map((item) =>
@@ -1371,29 +1462,10 @@ export const ModuleManagement: React.FC = () => {
           }
         }
 
-        
         setTimeout(() => {
           setShowToast(false);
           setToastMessage(null);
-        }, 5000); 
-
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
+        }, 5000);
       } else {
         setToastMessage("Failed to deallocate developers. Please try again.");
         setShowToast(true);
@@ -1403,12 +1475,9 @@ export const ModuleManagement: React.FC = () => {
       setShowToast(true);
     } finally {
       setIsDeallocating(false);
-      
       setSelectedDevelopersForDeallocation(null);
       setSelectedDevelopersForDeallocationBulk([]);
       setSelectedModuleDevelopersForDeallocationBulk([]);
-      
-      
     }
   };
 
@@ -1556,7 +1625,7 @@ export const ModuleManagement: React.FC = () => {
     try {
       if (onlyModulesSelected) {
         if (!selectedModuleDeveloperProjectAllocationId) {
-          setToastMessage("Please select a developer for module allocation.");
+          setToastMessage("Please select a QA Lead or QA Engineer for module allocation.");
           setShowToast(true);
           return;
         }
@@ -1634,6 +1703,16 @@ export const ModuleManagement: React.FC = () => {
             );
             if (moduleItems.length > 0) {
               await fetchAllSelectedModulesAllocatedUsers();
+              for (const item of moduleItems) {
+                const devs = await getDevelopersByModuleId(
+                  Number(selectedProjectId),
+                  Number(item.moduleId),
+                );
+                setModuleDevelopers((prev) => ({
+                  ...prev,
+                  [item.moduleId]: devs,
+                }));
+              }
             }
           }
 
@@ -1836,11 +1915,10 @@ export const ModuleManagement: React.FC = () => {
 
     return selectedItems.some((item) => {
       if (item.type === "module") {
-        
         const directModuleDevs = (moduleDevelopers[item.moduleId] || []).filter(
           (d) => d.subModuleId == null,
         );
-        return directModuleDevs.length > 0;
+        return directModuleDevs.length > 0 || (moduleAllocatedUsers && moduleAllocatedUsers.length > 0);
       }
       return false;
     });
@@ -1855,17 +1933,20 @@ export const ModuleManagement: React.FC = () => {
 
   
   const hasAllocatedDevelopersForDeallocation = () => {
+    let hasModuleAlloc = false;
+    let hasSubmoduleAlloc = false;
+
     if (selectedItems.some((item) => item.type === "module")) {
-      return moduleAllocatedUsers && moduleAllocatedUsers.length > 0;
+      hasModuleAlloc = !!(moduleAllocatedUsers && moduleAllocatedUsers.length > 0);
     }
     if (selectedItems.some((item) => item.type === "submodule")) {
-      return (
+      hasSubmoduleAlloc = !!(
         selectedSubmoduleAllocatedDevelopers.length > 0 ||
         (submoduleAllocatedUsersForDeallocation &&
           submoduleAllocatedUsersForDeallocation.length > 0)
       );
     }
-    return false;
+    return hasModuleAlloc || hasSubmoduleAlloc;
   };
 
   const isItemDisabled = (
@@ -2878,9 +2959,11 @@ export const ModuleManagement: React.FC = () => {
                     {(filteredModules || []).map((module) => {
                       
 
-                      const moduleDevs = module.assignedDev
-                        ? [{ userName: module.assignedDev.userName, userId: module.assignedDev.userId }]
-                        : [];
+                      const moduleDevs = (moduleDevelopers[module.id] && moduleDevelopers[module.id].length > 0)
+                        ? moduleDevelopers[module.id]
+                        : (module.assignedDev
+                          ? [{ userName: module.assignedDev.userName, userId: module.assignedDev.userId }]
+                          : []);
                       console.log(
                         "Module developers for module",
                         module.id,
@@ -3635,11 +3718,8 @@ export const ModuleManagement: React.FC = () => {
                   ? "Not available - already allocated"
                   : `${selectedDeveloperProjectAllocationIds.length + (selectedModuleDeveloperProjectAllocationId ? 1 : 0)} developer(s) selected for allocation`}
                 <br />• <strong>Deallocate:</strong>{" "}
-                {(selectedItems.some((item) => item.type === "module")
-                  ? selectedDevelopersForDeallocation
-                    ? 1
-                    : 0
-                  : 0) + selectedDevelopersForDeallocationBulk.length}{" "}
+                {(selectedModuleDevelopersForDeallocationBulk.length +
+                  selectedDevelopersForDeallocationBulk.length)}{" "}
                 developer(s) selected for deallocation
               </p>
             </div>
@@ -3650,21 +3730,19 @@ export const ModuleManagement: React.FC = () => {
             {onlyModulesSelected && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select Developer for Module Allocation
+                  Select QA Lead / QA Engineer for Module Allocation
                 </label>
                 <div className="max-h-60 overflow-y-auto space-y-2">
                   {getRoleTypedModuleLeaders().length > 0 ? (
                     getRoleTypedModuleLeaders()
                       .filter(dev => {
-                        
-                        const [name] = dev.userWithRole.split("-");
+                        const name = dev.employeeName || (dev.userWithRole.includes(" - ") ? dev.userWithRole.split(" - ")[0] : dev.userWithRole.split("-")[0]);
                         const trimmedName = name.trim();
                         return !selectedItems.some((item) => {
                           if (item.type === "module") {
                             const moduleAllocatedUserNames =
                               moduleAllocatedUsers.map((user) => {
-                                const [allocatedName] =
-                                  user.userWithRole.split("-");
+                                const allocatedName = user.userName || user.userWithRole.split("-")[0];
                                 return allocatedName.trim();
                               });
                             return moduleAllocatedUserNames.includes(
@@ -3675,7 +3753,8 @@ export const ModuleManagement: React.FC = () => {
                         });
                       })
                       .map((dev, idx) => {
-                        const [name, role] = dev.userWithRole.split("-");
+                        const name = dev.employeeName || (dev.userWithRole.includes(" - ") ? dev.userWithRole.split(" - ")[0] : dev.userWithRole.split("-")[0]);
+                        const role = dev.roleName || (dev.userWithRole.includes(" - ") ? dev.userWithRole.split(" - ")[1] : dev.userWithRole.split("-")[1]);
                         return (
                           <div
                             key={idx}
@@ -3705,19 +3784,18 @@ export const ModuleManagement: React.FC = () => {
                               <div className="text-sm font-semibold text-gray-900">
                                 {name.trim()}
                               </div>
-                              {role &&
-                                role.trim().toLowerCase() !== "developer" && (
-                                  <div className="text-xs text-gray-500">
-                                    {role.trim()}
-                                  </div>
-                                )}
+                              {role && (
+                                <div className="text-xs text-gray-500">
+                                  {role.trim()}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
                       })
                   ) : (
                     <div className="text-gray-400 text-sm">
-                      No developers found for this project.
+                      No QA Lead or QA Engineer found allocated to this project.
                     </div>
                   )}
                 </div>
@@ -3793,7 +3871,8 @@ export const ModuleManagement: React.FC = () => {
                         );
                       })
                       .map((dev, idx) => {
-                        const [name, role] = dev.userWithRole.split("-");
+                        const name = dev.employeeName || (dev.userWithRole.includes(" - ") ? dev.userWithRole.split(" - ")[0] : dev.userWithRole.split("-")[0]);
+                        const role = dev.roleName || (dev.userWithRole.includes(" - ") ? dev.userWithRole.split(" - ")[1] : dev.userWithRole.split("-")[1]);
                         return (
                           <div
                             key={idx}
@@ -3876,19 +3955,18 @@ export const ModuleManagement: React.FC = () => {
                               <div className="text-sm font-semibold text-gray-900">
                                 {name.trim()}
                               </div>
-                              {role &&
-                                role.trim().toLowerCase() !== "developer" && (
-                                  <div className="text-xs text-gray-500">
-                                    {role.trim()}
-                                  </div>
-                                )}
+                              {role && (
+                                <div className="text-xs text-gray-500">
+                                  {role.trim()}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
                       })
                   ) : (
-                    <div className="text-gray-400 text-sm">
-                      No developers found for this project.
+                    <div className="text-gray-400 text-sm p-2">
+                      No Developers found allocated to this project.
                     </div>
                   )}
                 </div>
@@ -4231,9 +4309,7 @@ export const ModuleManagement: React.FC = () => {
               selectedItems.length === 0 ||
               isDeallocating ||
               !hasAllocatedDevelopersForDeallocation() ||
-              (selectedItems.some((item) => item.type === "module") &&
-                selectedModuleDevelopersForDeallocationBulk.length === 0) ||
-              (selectedItems.some((item) => item.type === "submodule") &&
+              (selectedModuleDevelopersForDeallocationBulk.length === 0 &&
                 selectedDevelopersForDeallocationBulk.length === 0)
             }
             className="bg-blue-600 hover:bg-blue-700"

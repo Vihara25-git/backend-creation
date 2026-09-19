@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export interface Submodule {
   id: number;
@@ -16,19 +16,34 @@ export interface GetSubmodulesResponse {
 }
 
 export const getSubmodulesByModule = async (moduleId: number): Promise<GetSubmodulesResponse> => {
-  const submodules = mockDb.getSubmodulesByModule(Number(moduleId));
-  return {
-    status: 'success',
-    message: 'Submodules fetched successfully',
-    statusCode: 200,
-    data: submodules.map(s => ({
-      id: s.id,
-      name: s.name || s.subModuleName || 'Submodule',
-      submoduleName: s.name || s.subModuleName || 'Submodule',
-      subModuleName: s.name || s.subModuleName || 'Submodule',
-      getSubModuleName: s.name || s.subModuleName || 'Submodule',
-    })),
-  };
+  try {
+    const response = await apiClient.get(`/api/v1/module/module/${moduleId}`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+
+    return {
+      status: 'success',
+      message: 'Submodules fetched successfully',
+      statusCode: 200,
+      data: items.map((s: any) => ({
+        id: s.subModuleId || s.id,
+        name: s.subModuleName || s.name || 'Submodule',
+        submoduleName: s.subModuleName || s.name || 'Submodule',
+        subModuleName: s.subModuleName || s.name || 'Submodule',
+        getSubModuleName: s.subModuleName || s.name || 'Submodule',
+      })),
+    };
+  } catch (err: any) {
+    if (err.response?.status === 404) {
+      return {
+        status: 'success',
+        message: 'Submodules fetched successfully',
+        statusCode: 200,
+        data: [],
+      };
+    }
+    throw err;
+  }
 };
 
 export const getSubmodulesByModuleId = async (moduleId: number): Promise<GetSubmodulesResponse> => {

@@ -1,95 +1,88 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export async function getBenchList(): Promise<any[]> {
-  const users = mockDb.getUsers();
-  return users
-    .filter(u => (u.availabilityPercent ?? 100) > 0)
-    .map(u => ({
-      id: u.id,
-      employeeId: u.id,
-      userId: u.userId,
-      firstName: u.firstName,
-      lastName: u.lastName,
-      email: u.email,
-      designationName: u.designationName,
-      skills: u.skills || [],
-      experience: u.experience || 2,
-      availabilityPercent: u.availabilityPercent ?? 100,
-      benchStartDate: u.joinedDate || '2026-01-01',
-      benchEndDate: '2026-12-31',
-    }));
+  try {
+    const response = await apiClient.get('/api/v1/bench-availability-view?page=0&size=1000');
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : (resData?.content || []);
+    return items;
+  } catch {
+    return [];
+  }
 }
 
 export const getViewAllocation = async (userId: string) => {
-  const user = mockDb.getUserById(Number(userId));
-  return {
-    data: {
-      availablePeriods: [
-        {
-          period: '2026-01-01 to 2026-12-31',
-          percentage: user?.availabilityPercent ?? 100,
-          project: user?.currentProjects?.[0] || 'Bench Resource',
-          userId: Number(userId),
-        },
-      ],
-    },
-  };
+  try {
+    const response = await apiClient.get(`/api/v1/bench-availability-view/employee/${userId}`);
+    const resData = response.data?.data || response.data;
+    return { data: resData || {} };
+  } catch {
+    return { data: {} };
+  }
 };
 
 export async function getEmployeeDetails(id: string): Promise<any> {
-  return mockDb.getUserById(Number(id));
+  try {
+    const response = await apiClient.get(`/api/v1/Employee/${id}`);
+    const resData = response.data?.data || response.data;
+    return Array.isArray(resData) ? resData[0] : resData;
+  } catch {
+    return null;
+  }
 }
 
 export const getBenchAvailability = async (page: number = 0, size: number = 5, filters: any = {}) => {
-  const users = mockDb.getUsers();
-  let bench = users.filter(u => (u.availabilityPercent ?? 100) > 0);
+  try {
+    const params = new URLSearchParams();
+    params.append('page', String(page));
+    params.append('size', String(size));
+    if (filters.name?.trim()) params.append('search', filters.name.trim());
+    if (filters.designation) params.append('designationName', filters.designation);
+    if (filters.minAvailable) params.append('availablePercentage', String(filters.minAvailable));
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
 
-  if (filters.designation) {
-    bench = bench.filter(u => u.designationName?.toLowerCase() === filters.designation.toLowerCase());
+    const url = (filters.name || filters.designation || filters.minAvailable || filters.startDate || filters.endDate)
+      ? `/api/v1/bench-availability-view/filter?${params.toString()}`
+      : `/api/v1/bench-availability-view?${params.toString()}`;
+
+    const response = await apiClient.get(url);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : (resData?.content || []);
+
+    return {
+      status: 'success',
+      statusCode: 200,
+      data: {
+        content: items,
+        data: items,
+        totalElements: resData?.totalElements ?? items.length,
+        totalPages: resData?.totalPages ?? 1,
+        size: resData?.size ?? size,
+        number: resData?.number ?? page,
+      },
+    };
+  } catch {
+    return {
+      status: 'success',
+      statusCode: 200,
+      data: {
+        content: [],
+        data: [],
+        totalElements: 0,
+        totalPages: 1,
+        size,
+        number: page,
+      },
+    };
   }
-  if (filters.minAvailable) {
-    bench = bench.filter(u => (u.availabilityPercent ?? 100) >= Number(filters.minAvailable));
-  }
-
-  const start = page * size;
-  const paged = bench.slice(start, start + size);
-
-  return {
-    status: 'success',
-    statusCode: 200,
-    data: {
-      content: paged.map(u => ({
-        id: u.id,
-        employeeId: u.id,
-        userId: u.userId,
-        firstName: u.firstName,
-        lastName: u.lastName,
-        designation: u.designationName,
-        skills: u.skills || [],
-        experience: u.experience || 2,
-        availability: u.availabilityPercent ?? 100,
-        status: (u.availabilityPercent ?? 100) === 100 ? 'Available' : 'Partially Allocated',
-        benchStartDate: '2026-01-01',
-        benchEndDate: '2026-12-31',
-      })),
-      totalElements: bench.length,
-      totalPages: Math.ceil(bench.length / size),
-      size,
-      number: page,
-    },
-  };
 };
 
 export const getEmployeeProjectHistory = async (userId: string) => {
-  const user = mockDb.getUserById(Number(userId));
-  return {
-    data: (user?.currentProjects || []).map((p, idx) => ({
-      id: idx + 1,
-      projectName: p,
-      roleName: user?.roleName || 'Developer',
-      allocationPercent: 50,
-      startDate: '2025-06-01',
-      endDate: '2026-12-31',
-    })),
-  };
+  try {
+    const response = await apiClient.get(`/api/v1/bench-availability-view/employee/${userId}`);
+    return { data: response.data?.data || response.data };
+  } catch {
+    return { data: [] };
+  }
 };

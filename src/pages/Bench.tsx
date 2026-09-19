@@ -16,6 +16,8 @@ import { DonutChart } from "../components/ui/DonutChart";
 import { SearchableMultiSelect } from "../components/ui/SearchableMultiSelect";
 import { useNavigate } from "react-router-dom";
 import { getBenchList, getEmployeeProjectHistory } from "../api/bench/bench";
+import { getDesignations } from "../api/designation/designation";
+import apiClient from "../lib/api";
 import { usePermission } from "../context/PermissionContext";
 import { OrbitProgress } from 'react-loading-indicators';
 interface BenchEmployee {
@@ -54,84 +56,163 @@ export const Bench: React.FC = () => {
 
   const {can} = usePermission();
 
-  // All unique designations from employee list
+  const [dbDesignations, setDbDesignations] = useState<{ id: number; name: string }[]>([]);
+
+  useEffect(() => {
+    getDesignations(0, 100)
+      .then((res: any) => {
+        const list = res.data?.content || res.content || [];
+        if (Array.isArray(list) && list.length > 0) {
+          setDbDesignations(
+            list.map((d: any) => ({
+              id: d.id || d.designationId,
+              name: d.name || d.designationName,
+            })),
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // All unique designations from database & employee list
   const allDesignations = useMemo(() => {
-    const names = [
-      ...new Set(employees.map((e) => e.designation).filter(Boolean)),
-    ];
-    return names.map((name, i) => ({ id: i + 1, name }));
-  }, [employees]);
+    const names = new Set<string>();
+    dbDesignations.forEach((d) => {
+      if (d.name) names.add(d.name);
+    });
+    employees.forEach((e) => {
+      if (e.designation) names.add(e.designation);
+    });
+    return Array.from(names).map((name, i) => ({ id: i + 1, name }));
+  }, [dbDesignations, employees]);
 
   const getAllBenchList = async () => {
     try {
-      setLoading(true)
-      const response = await getBenchList();
+      setLoading(true);
+      const [benchItems, employeesPage, allocationsList] = await Promise.all([
+        getBenchList().catch(() => []),
+        apiClient
+          .get("/api/v1/Employee/view/paged?page=0&size=1000")
+          .then((res) => res.data?.data?.content || res.data?.content || [])
+          .catch(() => []),
+        apiClient
+          .get("/api/v1/bench-allocation?page=0&size=1000")
+          .then((res) => res.data?.data?.content || res.data?.data || res.data?.content || res.data || [])
+          .catch(() => []),
+      ]);
 
-      const activeEmployees = response.filter(
-        (item: any) => item.employee?.active === true,
-      );
+      const empMap = new Map<string, any>();
+      (employeesPage || []).forEach((emp: any) => {
+        empMap.set(String(emp.empId || emp.id), emp);
+      });
 
-      const mappedEmployees = await Promise.all(
-        activeEmployees.map(async (item: any) => {
-          let currentProjects: any[] = [];
+      const benchMap = new Map<string, any>();
+      (benchItems || []).forEach((b: any) => {
+        const id = String(b.empId || b.employeeId || b.id || b.employee?.id);
+        benchMap.set(id, b);
+      });
 
-          try {
-            const allocationResponse = await getEmployeeProjectHistory(
-              String(item.employee.id),
-            );
+      const allocMap = new Map<string, any[]>();
+      (allocationsList || []).forEach((alloc: any) => {
+        const empId = String(alloc.empId || alloc.employeeId || alloc.employee?.id);
+        if (!allocMap.has(empId)) allocMap.set(empId, []);
+        allocMap.get(empId)!.push(alloc);
+      });
 
-            const allocations = allocationResponse?.data || [];
+      // Combine all employees: from employee table, bench records, and allocations
+      const allEmpIds = new Set<string>([
+        ...Array.from(empMap.keys()),
+        ...Array.from(benchMap.keys()),
+        ...Array.from(allocMap.keys()),
+      ]);
 
-            const uniqueProjectMap = new Map<string, any>();
+      const mappedEmployees: BenchEmployee[] = Array.from(allEmpIds).map((id) => {
+        const emp = empMap.get(id);
+        const bench = benchMap.get(id);
 
-            allocations.forEach((alloc: any) => {
-              const projectId =
-                alloc.projectId ||
-                alloc.project_id ||
-                alloc.project?.id ||
-                alloc.projectName ||
-                alloc.project?.name;
+        const fullName =
+          bench?.employeeName ||
+          (emp
+            ? `${emp.firstName || ""} ${emp.lastName || ""}`.trim()
+            : `Employee ${id}`);
+        const nameParts = fullName.split(" ");
+        const firstName = emp?.firstName || nameParts[0] || "";
+        const lastName = emp?.lastName || nameParts.slice(1).join(" ") || "";
 
-              const projectName =
-                alloc.projectName ||
-                alloc.project?.name ||
-                alloc.project_name ||
-                "Unknown Project";
-
-              if (!uniqueProjectMap.has(String(projectId))) {
-                uniqueProjectMap.set(String(projectId), {
-                  projectName,
-                });
-              }
-            });
-
-            currentProjects = Array.from(uniqueProjectMap.values());
-          } catch (error) {
-            currentProjects = [];
+        let currentProjects: any[] = [];
+        if (bench?.currentProjects) {
+          if (typeof bench.currentProjects === "string") {
+            currentProjects = bench.currentProjects
+              .split(",")
+              .map((p: string) => ({ projectName: p.trim() }))
+              .filter((p: any) => p.projectName);
+          } else if (Array.isArray(bench.currentProjects)) {
+            currentProjects = bench.currentProjects;
           }
+        }
+        if (currentProjects.length === 0) {
+          const empAllocs = allocMap.get(id) || [];
+          const projectNames = Array.from(
+            new Set(empAllocs.map((a: any) => a.projectName || `Project ${a.projectId}`).filter(Boolean))
+          );
+          currentProjects = projectNames.map((name) => ({ projectName: name }));
+        }
 
-          return {
-            id: String(item.employee.id),
-            firstName: item.employee.firstName,
-            lastName: item.employee.lastName,
-            email: item.employee.email,
-            phone: item.employee.contactNo,
-            designation: item.employee.designationName,
-            availability: item.availability,
-            availabilityPeriod: item.availabilityPeriod,
-            status: item.employee.active ? "Active" : "Inactive",
-            currentProjects,
-          };
-        }),
-      );
+        let rawAvail =
+          bench?.availablePercentage ??
+          (bench?.totalAllocatedPercentage != null
+            ? 100 - bench.totalAllocatedPercentage
+            : null);
+
+        if (rawAvail == null) {
+          const empAllocs = allocMap.get(id) || [];
+          const totalAllocated = empAllocs.reduce(
+            (sum: number, a: any) => sum + (Number(a.availability) || 0),
+            0,
+          );
+          rawAvail = 100 - totalAllocated;
+        }
+
+        const availability = Math.max(0, Math.min(100, Number(rawAvail ?? 100)));
+
+        let availabilityPeriod = "";
+        if (bench?.availablePeriod) {
+          availabilityPeriod = String(bench.availablePeriod).split("T")[0];
+        } else if (bench?.availableFrom) {
+          availabilityPeriod = String(bench.availableFrom).split("T")[0];
+        } else {
+          const empAllocs = allocMap.get(id) || [];
+          const latestEnd = empAllocs
+            .map((a: any) => a.endDate)
+            .filter(Boolean)
+            .sort()
+            .pop();
+          if (latestEnd) {
+            availabilityPeriod = String(latestEnd).split("T")[0];
+          }
+        }
+
+        return {
+          id,
+          firstName,
+          lastName,
+          email: emp?.email || "",
+          phone: emp?.whatsappNumber || emp?.contactNo || "",
+          designation:
+            bench?.designationName || emp?.designationName || "Developer",
+          availability,
+          availabilityPeriod,
+          status: emp?.isActive !== false ? "Active" : "Inactive",
+          currentProjects,
+        };
+      });
 
       setEmployees(mappedEmployees);
     } catch (error) {
       console.error("Error loading bench list:", error);
       setEmployees([]);
-      setLoading(false)
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   };
 
@@ -159,7 +240,8 @@ export const Bench: React.FC = () => {
   }
 
   const filteredEmployees = useMemo(() => {
-    let filtered = employees.filter((emp) => emp.availability > 0);
+    // Display all employees in the bench section
+    let filtered = employees;
     if (filters.name.trim()) {
       const nameFilter = filters.name.trim().toLowerCase();
       filtered = filtered.filter((emp) => {

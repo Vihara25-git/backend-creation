@@ -210,6 +210,7 @@ export const Projects: React.FC = () => {
 const handleDesignationChange = async (value: string) => {
     handleInputChange("designationId", value);
     handleInputChange("projectManagerId", "");
+    handleInputChange("projectManagerName", "");
     setUsers([]);
     if (value) {
       try {
@@ -236,6 +237,7 @@ const handleProjectManagerSelect = (e: React.ChangeEvent<HTMLSelectElement>) => 
       const selectedUser = users.find((u) => String(u.employeeId) === managerId);
       if (selectedUser) {
         const managerName = `${selectedUser.firstName} ${selectedUser.lastName}`;
+        handleInputChange("projectManagerName", managerName);
         const isSameAsCurrentPm = editingProject 
           ? String(selectedUser.employeeId) === String(editingProject.managerId)
           : false;
@@ -349,32 +351,33 @@ const handleAllocateManager = async () => {
   try {
     setLoading(true);
     const response = await getAllProjects();
-    const mappedProjects: LocalProject[] = response.map((project: any) => ({
-      id: String(project.id),
-      name: project.name || "",
-      prefix: project.prefix || "",
-      projectType: project.projectType || "",
-      status: project.status as LocalProject["status"],
-      startDate: project.startDate || "",
-      endDate: project.endDate || "",
-      projectManagerName: project.projectManagerName,
-      managerId: project.projectManagerId
-        ? String(project.projectManagerId)
-        : "",
-      projectManagerDesignationId: project.projectManagerDesignationId
-        ? Number(project.projectManagerDesignationId)
-        : undefined,
-      clientName: project.clientName || "",
-      clientCountry: project.clientCountry || "",
-      clientState: project.clientState || "",
-      clientEmail: project.clientEmail || "",
-      clientPhone: project.clientPhone || "",
-      address: project.address || "",
-      description: project.description || "",
-      managerAllocation: project.managerAllocation
-        ? Number(project.managerAllocation)
-        : undefined,
-    }));
+    const mappedProjects: LocalProject[] = response.map((project: any) => {
+      const pmId = project.projectManagerId || project.managerId || project.userId;
+      const desId = project.projectManagerDesignationId || project.designationId;
+      const pmName = project.projectManagerName || project.manager || "";
+      return {
+        id: String(project.id),
+        name: project.name || "",
+        prefix: project.prefix || "",
+        projectType: project.projectType || "",
+        status: project.status as LocalProject["status"],
+        startDate: project.startDate || "",
+        endDate: project.endDate || "",
+        projectManagerName: pmName,
+        managerId: pmId ? String(pmId) : "",
+        projectManagerDesignationId: desId ? Number(desId) : undefined,
+        clientName: project.clientName || "",
+        clientCountry: project.clientCountry || "",
+        clientState: project.clientState || "",
+        clientEmail: project.clientEmail || "",
+        clientPhone: project.clientPhone || "",
+        address: project.address || "",
+        description: project.description || "",
+        managerAllocation: project.managerAllocation
+          ? Number(project.managerAllocation)
+          : undefined,
+      };
+    });
 
     if (isAdmin) {
       setProjects(mappedProjects);
@@ -452,12 +455,22 @@ const handleAllocateManager = async () => {
         ? Number(formData.managerAllocation)
         : undefined;
 
+    const selectedManager = users.find((u) => String(u.employeeId) === String(formData.projectManagerId));
+    const pmName = formData.projectManagerName || (selectedManager ? `${selectedManager.firstName} ${selectedManager.lastName}`.trim() : "");
+
     const apiData = {
       name: formData.name.trim(),
+      prefix: formData.prefix ? formData.prefix.trim() : "",
+      projectType: formData.projectType || "",
       description: formData.description || "",
       startDate: formData.startDate,
       endDate: formData.endDate,
       projectManagerId: Number(formData.projectManagerId),
+      managerId: String(formData.projectManagerId),
+      designationId: formData.designationId ? Number(formData.designationId) : undefined,
+      projectManagerDesignationId: formData.designationId ? Number(formData.designationId) : undefined,
+      projectManagerName: pmName,
+      manager: pmName,
       clientName: formData.clientName.trim(),
       clientEmail: formData.clientEmail.trim(),
       clientCountry: formData.clientCountry.trim(),
@@ -516,15 +529,76 @@ const handleAllocateManager = async () => {
     setCurrentPmAllocation(project.managerAllocation ?? 0);
     // Show allocation update field immediately when edit modal opens
     setIsUpdatingAllocation(true);
-    setAllocatingManagerName(project.projectManagerName || "");
-    
+
     if (designations.length === 0) {
       await loadDesignations();
     }
 
-    const desId = project.projectManagerDesignationId
+    let desId = project.projectManagerDesignationId
       ? String(project.projectManagerDesignationId)
       : "";
+
+    // If desId is not directly present, query all managers to discover the manager's designationId
+    let loadedManagers: AvailableManager[] = [];
+    if (desId) {
+      try {
+        loadedManagers = await getAvailableManagersForUpdate(
+          Number(desId),
+          Number(project.id)
+        );
+      } catch (err) {
+        console.error("Failed to load available managers:", err);
+      }
+    } else if (project.managerId) {
+      try {
+        const allManagers = await getAvailableManagers();
+        const found = allManagers.find(
+          (m) => String(m.employeeId) === String(project.managerId)
+        );
+        if (found && found.designationId) {
+          desId = String(found.designationId);
+          loadedManagers = await getAvailableManagersForUpdate(
+            Number(desId),
+            Number(project.id)
+          );
+        }
+      } catch (err) {
+        console.error("Failed to find manager designation:", err);
+      }
+    }
+
+    // Always include current PM in the manager dropdown even if 100% allocated elsewhere
+    if (project.managerId) {
+      const currentPmInList = loadedManagers.find(
+        (m) => String(m.employeeId) === String(project.managerId)
+      );
+      if (!currentPmInList) {
+        try {
+          const allManagers = await getAvailableManagers(desId ? Number(desId) : undefined);
+          const currentPm = allManagers.find(
+            (m) => String(m.employeeId) === String(project.managerId)
+          );
+          if (currentPm) {
+            loadedManagers.unshift(currentPm);
+            if (!desId && currentPm.designationId) {
+              desId = String(currentPm.designationId);
+            }
+          }
+        } catch {}
+      }
+    }
+    setUsers(loadedManagers);
+
+    const currentPmObj = loadedManagers.find(
+      (m) => String(m.employeeId) === String(project.managerId)
+    );
+    const resolvedPmName = project.projectManagerName || (currentPmObj ? `${currentPmObj.firstName} ${currentPmObj.lastName}`.trim() : "");
+    setAllocatingManagerName(resolvedPmName);
+    if (currentPmObj) {
+      setAllocatingManagerDesignation(currentPmObj.designationName || "");
+      setAllocatingManagerId(String(currentPmObj.employeeId));
+      setSelectedManagerAvailability(currentPmObj.availabilityPercent);
+    }
 
     setFormData({
       name: project.name,
@@ -535,7 +609,7 @@ const handleAllocateManager = async () => {
       endDate: project.endDate,
       designationId: desId,
       projectManagerId: project.managerId || "",
-      projectManagerName: project.projectManagerName,
+      projectManagerName: resolvedPmName,
       clientName: project.clientName,
       clientCountry: project.clientCountry,
       clientState: project.clientState,
@@ -544,35 +618,9 @@ const handleAllocateManager = async () => {
       address: project.address,
       description: project.description,
       managerAllocation: project.managerAllocation
-  ? String(project.managerAllocation)
-  : "",
+        ? String(project.managerAllocation)
+        : "",
     });
-if (desId) {
-      try {
-        const managers = await getAvailableManagersForUpdate(
-          Number(desId),
-          Number(project.id)
-        );
-        // Always include the current PM even if they're at 100% (they're already in this project)
-        const currentPmInList = managers.find(
-          (m) => String(m.employeeId) === String(project.managerId)
-        );
-        if (!currentPmInList && project.managerId) {
-          // Fetch current PM separately to show in dropdown
-          try {
-            const allManagers = await getAvailableManagers(Number(desId));
-            const currentPm = allManagers.find(
-              (m) => String(m.employeeId) === String(project.managerId)
-            );
-            if (currentPm) managers.unshift(currentPm);
-          } catch {}
-        }
-        setUsers(managers);
-      } catch (err) {
-        console.error("Failed to load available managers:", err);
-        setUsers([]);
-      }
-    }
 
     setIsModalOpen(true);
   };

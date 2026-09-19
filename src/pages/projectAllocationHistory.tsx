@@ -98,9 +98,10 @@ useEffect(() => {
           allocations: [
             {
               id: item.id,
-              firstName: item.firstName || '',
-              lastName: item.lastName || '',
+              firstName: item.firstName || item.employeeName?.split(' ')[0] || '',
+              lastName: item.lastName || item.employeeName?.split(' ').slice(1).join(' ') || '',
               email: item.email || '',
+              userFullName: item.userFullName || `${item.firstName || ''} ${item.lastName || ''}`.trim() || item.employeeName || 'Employee',
               roleName: item.roleName || '',
               roleId: item.roleId,
               percentage: item.allocationPercent || item.percentage || 0,
@@ -380,7 +381,9 @@ const handleProjectSelect = (id: string) => {
                                 <User className="w-5 h-5 text-blue-500" />
                               </div>
                               <div>
-                                <h4 className="font-semibold text-gray-900">{user.allocations[0].firstName} {user.allocations[0].lastName}</h4>
+                                <h4 className="font-semibold text-gray-900">
+                                  {user.allocations[0].userFullName || `${user.allocations[0].firstName || ''} ${user.allocations[0].lastName || ''}`.trim() || 'Employee'}
+                                </h4>
                      
                               </div>
                             </div>
@@ -399,9 +402,9 @@ const handleProjectSelect = (id: string) => {
                               </div>
                               <Badge className={getStatusColor(user.allocations[0].status)}>
                                 {user.allocations[0].status === true
-                                  ? 'Allocated'
+                                  ? 'Allocate'
                                   : user.allocations[0].status === false
-                                    ? 'Deallocated'
+                                    ? 'Deallocate'
                                     : ''}
                               </Badge>
                             </div>
@@ -423,14 +426,14 @@ const handleProjectSelect = (id: string) => {
                                       <div className="flex items-center justify-between mb-2">
                                           <div className="flex items-center gap-2">
                                             <Badge className={getStatusColor(record.status)}>
-                                              {record.status === true ? 'Allocated' : record.status === false ? 'Deallocated' : ''}
+                                              {record.status === true ? 'Allocate' : record.status === false ? 'Deallocate' : ''}
                                             </Badge>
                                           </div>
                                         <span className="text-sm font-medium">{record.roleName || ''}</span>
                                       </div>
                                       <div className="space-y-2">
                                         <div className="text-sm">
-                                          <p><span className="font-medium">User:</span> {record.firstName} {record.lastName}</p>
+                                          <p><span className="font-medium">User:</span> {record.userFullName || `${record.firstName || ''} ${record.lastName || ''}`.trim() || 'Employee'}</p>
                                           <p><span className="font-medium">Email:</span> {record.email}</p>
                                           <p><span className="font-medium">Role:</span> {record.roleName}</p>
                                           <p><span className="font-medium">Percentage:</span> {record.percentage}%</p>

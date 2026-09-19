@@ -1,4 +1,4 @@
-import { mockDb } from "../mock/mockData";
+import apiClient from "../lib/api";
 
 export type RoleType =
   | "ADMIN"
@@ -15,23 +15,35 @@ export type RoleType =
   | "SUPPORT_ENGINEER"
   | "CLIENT";
 
+async function fetchBackendRoles(): Promise<any[]> {
+  try {
+    const res = await apiClient.get('/api/v1/Role?page=0&size=100');
+    const data = res.data?.data || res.data;
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.content)) return data.content;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 export const roleTypeBasedRoleFetch = async (
   roleType: RoleType,
 ): Promise<string[]> => {
-  const roles = mockDb.getRoles();
+  const roles = await fetchBackendRoles();
   return roles
-    .filter((role) => (role.type as string) === roleType || role.roleName?.toUpperCase().includes(roleType.replace('_', ' ')))
+    .filter((role) => (role.type as string) === roleType || role.roleName?.toUpperCase().replace(/\s+/g, '_') === roleType || role.roleName?.toUpperCase().includes(roleType.replace('_', ' ')))
     .map((role) => role.roleName);
 };
 
 export const roleTypesBasedRoleFetch = async (
   roleTypes: RoleType[],
 ): Promise<string[]> => {
-  const roles = mockDb.getRoles();
+  const roles = await fetchBackendRoles();
   return roles
     .filter((role) => {
       const typeStr = (role.type || '') as RoleType;
-      return roleTypes.includes(typeStr) || roleTypes.some(t => role.roleName?.toUpperCase().includes(t.replace('_', ' ')));
+      return roleTypes.includes(typeStr) || roleTypes.some(t => role.roleName?.toUpperCase().replace(/\s+/g, '_') === t || role.roleName?.toUpperCase().includes(t.replace('_', ' ')));
     })
     .map((role) => role.roleName);
 };
@@ -39,8 +51,8 @@ export const roleTypesBasedRoleFetch = async (
 export const roleTypeBasedRoleIdFetch = async (
   roleType: RoleType,
 ): Promise<number[]> => {
-  const roles = mockDb.getRoles();
+  const roles = await fetchBackendRoles();
   return roles
-    .filter((role) => (role.type as string) === roleType || role.roleName?.toUpperCase().includes(roleType.replace('_', ' ')))
-    .map((role) => role.id);
+    .filter((role) => (role.type as string) === roleType || role.roleName?.toUpperCase().replace(/\s+/g, '_') === roleType || role.roleName?.toUpperCase().includes(roleType.replace('_', ' ')))
+    .map((role) => role.roleId || role.id);
 };

@@ -20,6 +20,8 @@ import {
   getRolePermissionByRoleId
 } from "../api/Privileges";
 import { isAxiosError } from "axios";
+import { ManagePrivilegesTab } from "../tabs/ManagePrivilegesTab";
+import { usePermission } from "../context/PermissionContext";
 
 interface PrivilegeGroup {
   module: string;
@@ -225,9 +227,7 @@ const buildEmployeePermissionUpdatePayload = (
   if (!privilege) return null;
 
   return {
-    permissionIds: privilege.privileges.filter(
-      permissionId => !privilege.inheritedPrivileges.includes(permissionId)
-    ).map(Number).filter(permissionId => !Number.isNaN(permissionId))
+    permissionIds: privilege.privileges.map(Number).filter(permissionId => !Number.isNaN(permissionId))
   };
 };
 
@@ -241,7 +241,9 @@ const buildRolePermissionUpdatePayload = (
 
 const Privileges: React.FC = () => {
   const navigate = useNavigate();
+  const { refreshPermissions } = usePermission();
   const [privilegeGroups, setPrivilegeGroups] = useState<PrivilegeGroup[]>([]);
+  const [activeTab, setActiveTab] = useState<"matrix" | "manage">("matrix");
   const [rolePrivileges, setRolePrivileges] = useState<RolePrivilege | null>(null);
   const [userPrivileges, setUserPrivileges] = useState<UserPrivilege | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -325,10 +327,7 @@ const Privileges: React.FC = () => {
       
       const rolesData = getResponseList<ApiRole>(response);
 
-      const filteredRoles = rolesData.filter((role) => role.id !== 1);
-
-      
-      const mappedRoles: Role[] = filteredRoles.map((role) => ({
+      const mappedRoles: Role[] = rolesData.map((role) => ({
         id: role.id?.toString() || '',
         name: role.roleName || role.name || '',
         roleName: role.roleName || role.name || '',
@@ -377,21 +376,17 @@ const Privileges: React.FC = () => {
   const selectedTargetCount = hasSelectedTargets ? 1 : 0;
 
   const currentEditablePermissionIds = isUserMode
-  ? (userPrivileges?.privileges || []).filter(
-      permissionId => !userPrivileges?.inheritedPrivileges.includes(permissionId)
-    )
-  : rolePrivileges?.privileges || [];
+    ? userPrivileges?.privileges || []
+    : rolePrivileges?.privileges || [];
 
-const originalEditablePermissionIds = isUserMode
-  ? (userPrivileges?.originalPrivileges || []).filter(
-      permissionId => !userPrivileges?.inheritedPrivileges.includes(permissionId)
-    )
-  : rolePrivileges?.originalPrivileges || [];
+  const originalEditablePermissionIds = isUserMode
+    ? userPrivileges?.originalPrivileges || []
+    : rolePrivileges?.originalPrivileges || [];
 
-const pendingPermissionChangeCount = buildPermissionChanges(
-  originalEditablePermissionIds,
-  currentEditablePermissionIds
-).length;
+  const pendingPermissionChangeCount = buildPermissionChanges(
+    originalEditablePermissionIds,
+    currentEditablePermissionIds
+  ).length;
   
   const selectedTargetLabel = isUserMode
     ? selectedTargetCount === 1 ? 'user' : 'users'
@@ -823,20 +818,15 @@ const assignRolePermission = async (
   }
 
   useEffect(() => {
-    setSelectedUserId(null);
-    setUserPrivileges(null);
-    setSelectedSourceRoleIds([]);
-    setSelectedRoleId(null);
-    setRolePrivileges(null);
     loadPrivileges();
     loadUsers();
     loadDesignations();
     loadRoles();
   }, [loadPrivileges, loadUsers, loadDesignations, loadRoles]);
 
-  
   const handleToggle = () => {
-    setIsUserMode(!isUserMode);
+    const nextMode = !isUserMode;
+    setIsUserMode(nextMode);
     setIsDesignationDropdownOpen(false);
     setIsUserDropdownOpen(false);
     setIsRoleDropdownOpen(false);
@@ -869,8 +859,7 @@ const assignRolePermission = async (
     Boolean(userPrivileges?.roleDerivedPrivileges.includes(privilegeId)) &&
     !isOriginalEmployeePrivilege(privilegeId);
 
-  const isPrivilegeLocked = (privilegeId: string) =>
-    isInheritedPrivilege(privilegeId);
+  const isPrivilegeLocked = (_privilegeId: string) => false;
 
   const getModifiablePrivilegeIds = (privilegeIds: string[]) =>
     privilegeIds.filter(privilegeId => !isPrivilegeLocked(privilegeId));
@@ -1087,11 +1076,10 @@ const handleSelectAllGroup = (module: string) => {
         return;
       }
 
-      await assignEmployeePermission (String(selectedUserId) , updatePayload)
+      await assignEmployeePermission (String(selectedUserId) , updatePayload);
       console.log('User permission payload ready for API integration:', updatePayload);
       await loadAllEmployeePermission(String(selectedUserId));
-
-  
+      await refreshPermissions();
       return;
     }
 
@@ -1111,8 +1099,9 @@ const handleSelectAllGroup = (module: string) => {
     console.log('Role permission changes ready for API integration:', updatePayload);
     const saved = await assignRolePermission(roleId, updatePayload);
     if (saved) {
-    await loadRolePermission(roleId);
-}
+      await loadRolePermission(roleId);
+      await refreshPermissions();
+    }
 
     if (saved) {
       setRolePrivileges(prev =>
@@ -1135,56 +1124,62 @@ const handleSelectAllGroup = (module: string) => {
         onClose={() => setToast({ ...toast, isOpen: false })}
       />
 
-      {}
+      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Privileges Configuration</h1>
           <p className="text-gray-600 mt-1">
-            Assign privileges to {isUserMode ? 'users' : 'roles'} for access control
+            {activeTab === "matrix"
+              ? `Assign privileges to ${isUserMode ? 'users' : 'roles'} for access control`
+              : "Manage privilege templates (CRUD operations) for system actions and modules"}
           </p>
         </div>
         <div className="flex items-center space-x-4">
-          {}
-          <Card className="p-3 bg-gray-50 border-gray-200">
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2">
-                <Shield className="w-4 h-4 text-blue-600" />
-                <span className={`text-sm font-medium ${!isUserMode ? 'text-blue-600' : 'text-gray-500'}`}>
-                  Roles
-                </span>
-              </div>
+          {activeTab === "matrix" && (
+            <>
+              {/* Toggle Switch */}
+              <Card className="p-3 bg-gray-50 border-gray-200">
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2">
+                    <Shield className="w-4 h-4 text-blue-600" />
+                    <span className={`text-sm font-medium ${!isUserMode ? 'text-blue-600' : 'text-gray-500'}`}>
+                      Roles
+                    </span>
+                  </div>
 
-              <button
-                onClick={handleToggle}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  isUserMode ? 'bg-blue-600' : 'bg-gray-300'
-                }`}
+                  <button
+                    onClick={handleToggle}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      isUserMode ? 'bg-blue-600' : 'bg-gray-300'
+                    }`}
+                    disabled={loading}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        isUserMode ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+
+                  <div className="flex items-center space-x-2">
+                    <User className="w-4 h-4 text-green-600" />
+                    <span className={`text-sm font-medium ${isUserMode ? 'text-green-600' : 'text-gray-500'}`}>
+                      Users
+                    </span>
+                  </div>
+                </div>
+              </Card>
+
+              <Button
+                onClick={handleSave}
+                className="flex items-center space-x-2"
                 disabled={loading}
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    isUserMode ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-
-              <div className="flex items-center space-x-2">
-                <User className="w-4 h-4 text-green-600" />
-                <span className={`text-sm font-medium ${isUserMode ? 'text-green-600' : 'text-gray-500'}`}>
-                  Users
-                </span>
-              </div>
-            </div>
-          </Card>
-
-          <Button
-            onClick={handleSave}
-            className="flex items-center space-x-2"
-            disabled={loading}
-          >
-            <Save className="w-4 h-4" />
-            <span>Save Changes</span>
-          </Button>
+                <Save className="w-4 h-4" />
+                <span>Save Changes</span>
+              </Button>
+            </>
+          )}
           <Button
             variant="secondary"
             onClick={() => navigate('/configurations')}
@@ -1195,7 +1190,39 @@ const handleSelectAllGroup = (module: string) => {
         </div>
       </div>
 
-      <Card className="shadow-lg">
+      {/* Sub-navigation tab bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 overflow-hidden">
+        <div className="flex flex-wrap">
+          <button
+            onClick={() => setActiveTab("matrix")}
+            className={`flex items-center px-5 py-3 text-sm font-medium transition-all ${
+              activeTab === "matrix"
+                ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <Shield className="w-4 h-4 mr-2" />
+            Privilege Assignment Matrix
+          </button>
+          <button
+            onClick={() => setActiveTab("manage")}
+            className={`flex items-center px-5 py-3 text-sm font-medium transition-all ${
+              activeTab === "manage"
+                ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <Key className="w-4 h-4 mr-2" />
+            Manage Privileges
+          </button>
+        </div>
+      </div>
+
+      {activeTab === "manage" ? (
+        <ManagePrivilegesTab onPrivilegeChanged={loadPrivileges} />
+      ) : (
+        <>
+          <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -1711,6 +1738,16 @@ const handleSelectAllGroup = (module: string) => {
           </div>
         )}
 
+        {/* Informative banner when no target is selected */}
+        {!hasSelectedTargets && (
+          <div className="mx-6 my-4 p-4 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 flex items-center space-x-3">
+            <Shield className="w-5 h-5 text-blue-600 flex-shrink-0" />
+            <span className="text-sm font-medium">
+              Please select a {isUserMode ? 'User' : 'Role'} from the dropdown above to view and configure privileges.
+            </span>
+          </div>
+        )}
+
         <CardContent className="p-0">
           <div className="overflow-x-auto" style={{ maxHeight: '70vh' }}>
             <table className="w-full">
@@ -1955,6 +1992,8 @@ const handleSelectAllGroup = (module: string) => {
           </div>
         </CardContent>
       </Card>
+      </>
+      )}
     </div>
   );
 };

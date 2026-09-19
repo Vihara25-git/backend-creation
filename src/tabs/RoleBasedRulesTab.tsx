@@ -27,11 +27,8 @@ export const RoleBasedRulesTab: React.FC = () => {
   const { can } = usePermission();
   const canAssign = can.roleEmailRecipient?.assign;
 
-  // Templates to IGNORE - will not be shown in the list at all
-  const ALWAYS_ASSIGNED_TEMPLATES: string[] = [
-    "EMPLOYEE_CREATED",
-    "PASSWORD_RESET"
-  ];
+  // All 20 notification templates displayed
+  const ALWAYS_ASSIGNED_TEMPLATES: string[] = [];
 
   useEffect(() => {
     loadPointSetups();
@@ -39,10 +36,13 @@ export const RoleBasedRulesTab: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedRole) {
-      loadAssignedRulesForRole(Number(selectedRole));
+    if (selectedRole && pointSetups.length > 0) {
+      loadAssignedRulesForRole(Number(selectedRole), pointSetups);
+    } else if (!selectedRole) {
+      setNotificationPreferences(new Map());
+      setOriginalPreferences(new Map());
     }
-  }, [selectedRole]);
+  }, [selectedRole, pointSetups]);
 
   const loadRoles = async () => {
     setRolesLoading(true);
@@ -50,8 +50,8 @@ export const RoleBasedRulesTab: React.FC = () => {
       const response = await getAllRoles(0, 100);
       const rolesData = response?.data?.content || [];
       const mappedRoles = rolesData.map((role: any) => ({
-        id: String(role.id),
-        label: role.roleName || role.name,
+        id: String(role.id ?? role.roleId),
+        label: role.name || role.roleName,
         icon: "👥",
         description: role.description || "Role based notification access",
       }));
@@ -69,33 +69,34 @@ export const RoleBasedRulesTab: React.FC = () => {
     try {
       const pointSetupsData = await getAllEmailPointSetups();
       
-      
       const filteredData = pointSetupsData.filter((point: any) => {
         return !ALWAYS_ASSIGNED_TEMPLATES.includes(point.eventType);
       });
       
       setPointSetups(filteredData);
+      return filteredData;
     } catch (error) {
       console.error("Error loading email point setups:", error);
       showToast("Failed to load notification points", "error");
       setPointSetups([]);
+      return [];
     } finally {
       setLoading(false);
     }
   };
 
-  const loadAssignedRulesForRole = async (roleId: number) => {
+  const loadAssignedRulesForRole = async (roleId: number, currentPoints = pointSetups) => {
     setLoading(true);
     try {
       const channelsMap = await getRoleNotificationChannels(roleId);
       const newPreferences = new Map<number, NotificationChannel>();
       
-      pointSetups.forEach(point => {
-        const channel = channelsMap[point.id];
+      currentPoints.forEach(point => {
+        const channel = channelsMap[point.id] || channelsMap[String(point.id)];
         if (channel && channel !== 'none') {
-          newPreferences.set(point.id, channel as NotificationChannel);
+          newPreferences.set(Number(point.id), channel as NotificationChannel);
         } else {
-          newPreferences.set(point.id, 'none');
+          newPreferences.set(Number(point.id), 'none');
         }
       });
       

@@ -90,7 +90,7 @@ export const Toast: React.FC<ToastProps> = ({
     startTimer();
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !message) return null;
 
   return (
     <div

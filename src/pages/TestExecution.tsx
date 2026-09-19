@@ -17,6 +17,7 @@ import {
   ChevronRight,
   FileText,
   Calendar,
+  Trash2,
 } from "lucide-react";
 
 import { useApp } from "../context/AppContext";
@@ -52,7 +53,8 @@ import {
   setExecutionStatus as persistExecutionStatus,
   ExecutionStatus,
   updateReleaseTestCaseStatus,
-  updateReleaseTestCaseStatusWithImage
+  updateReleaseTestCaseStatusWithImage,
+  deleteReleaseTestCase
 } from "../api/testExecution/testExecution";
 
 import { getSeverities } from "../api/severity";
@@ -127,175 +129,7 @@ const mockQA: any[] = [
 
 
 
-const mockTestCases = [
-  {
-    id: "TC-AUT-BIO-0001",
-
-    module: "Authentication",
-
-    subModule: "Biometric Login",
-
-    description: "Verify that users can log in using biometric authentication",
-
-    steps:
-      "Open the mobile banking app\nSelect biometric login option\nAuthenticate using fingerprint/face ID\nVerify successful login and redirection to dashboard",
-
-    type: "functional",
-
-    severity: "high",
-
-    status: "active",
-
-    projectId: "PR0001",
-  },
-
-  {
-    id: "TC-AUT-PIN-0001",
-
-    module: "Authentication",
-
-    subModule: "PIN Login",
-
-    description: "Test PIN login security features",
-
-    steps:
-      "Enter incorrect PIN 3 times\nVerify account lockout\nWait for lockout period\nEnter correct PIN\nVerify successful login",
-
-    type: "functional",
-
-    severity: "critical",
-
-    status: "active",
-
-    projectId: "PR0001",
-  },
-
-  {
-    id: "TC-PAY-001",
-
-    module: "Payment",
-
-    subModule: "Gateway Integration",
-
-    description: "Test new payment gateway integration",
-
-    steps:
-      "Add items to cart\nProceed to checkout\nSelect new payment method\nComplete payment\nVerify order confirmation",
-
-    type: "integration",
-
-    severity: "high",
-
-    status: "active",
-
-    projectId: "PR0001",
-  },
-
-  {
-    id: "TC-CART-002",
-
-    module: "Shopping Cart",
-
-    subModule: "Cart Management",
-
-    description: "Test enhanced cart functionality",
-
-    steps:
-      "Add multiple items to cart\nModify quantities\nRemove items\nApply discount codes\nVerify total calculation",
-
-    type: "functional",
-
-    severity: "medium",
-
-    status: "active",
-
-    projectId: "PR0001",
-  },
-
-  {
-    id: "TC-USER-003",
-
-    module: "User Management",
-
-    subModule: "Dashboard",
-
-    description: "Test new user dashboard features",
-
-    steps:
-      "Login to user account\nNavigate to dashboard\nView order history\nUpdate profile information\nSave changes",
-
-    type: "functional",
-
-    severity: "medium",
-
-    status: "active",
-
-    projectId: "PR0001",
-  },
-
-  {
-    id: "TC-ANALYTICS-001",
-
-    module: "Analytics",
-
-    subModule: "Real-time Data",
-
-    description: "Test real-time analytics data display",
-
-    steps:
-      "Access analytics dashboard\nSelect real-time data view\nVerify data updates\nExport data\nGenerate reports",
-
-    type: "functional",
-
-    severity: "high",
-
-    status: "active",
-
-    projectId: "PR0002",
-  },
-
-  {
-    id: "TC-REPORTS-002",
-
-    module: "Reporting",
-
-    subModule: "Custom Reports",
-
-    description: "Test custom report generation",
-
-    steps:
-      "Navigate to reports section\nCreate custom report\nSelect data parameters\nGenerate report\nDownload report",
-
-    type: "functional",
-
-    severity: "medium",
-
-    status: "active",
-
-    projectId: "PR0002",
-  },
-
-  {
-    id: "TC-VISUAL-003",
-
-    module: "Visualization",
-
-    subModule: "Charts",
-
-    description: "Test data visualization components",
-
-    steps:
-      "Select chart type\nConfigure data source\nCustomize appearance\nSave chart configuration\nShare chart",
-
-    type: "functional",
-
-    severity: "low",
-
-    status: "active",
-
-    projectId: "PR0002",
-  },
-];
+const mockTestCases: any[] = [];
 const DEV_ROLE_TYPES = [
   "DEV_LEAD",
   "SENIOR_DEVELOPER",
@@ -303,128 +137,7 @@ const DEV_ROLE_TYPES = [
   "JUNIOR_DEVELOPER",
 ];
 
-const mockReleases = (() => {
-  
-
-  try {
-    const stored = localStorage.getItem("mockReleases");
-
-    if (stored) return JSON.parse(stored);
-  } catch (e) {}
-
-  
-
-  return [
-    {
-      id: "R002",
-
-      name: "Mobile Banking v2.1",
-
-      version: "2.1.0",
-
-      description: "Security enhancements and UI updates for mobile banking",
-
-      projectId: "PR0001",
-
-      status: "planned",
-
-      releaseDate: "2024-04-01",
-
-      testCases: ["TC-AUT-BIO-0001", "TC-AUT-PIN-0001"],
-
-      features: ["Biometric login", "Quick transfer"],
-
-      bugFixes: ["Fixed session timeout"],
-
-      createdAt: "2024-03-10T09:00:00Z",
-    },
-
-    {
-      id: "R003",
-
-      name: "Inventory v1.2",
-
-      version: "1.2.0",
-
-      description:
-        "Performance improvements and bug fixes for inventory system",
-
-      projectId: "PR0003",
-
-      status: "completed",
-
-      releaseDate: "2024-02-15",
-
-      testCases: [],
-
-      features: ["Faster report generation"],
-
-      bugFixes: ["Fixed database timeout"],
-
-      createdAt: "2024-02-01T08:00:00Z",
-    },
-
-    {
-      id: "R004",
-
-      name: "E-commerce Platform v3.0",
-
-      version: "3.0.0",
-
-      description:
-        "Major update with new payment gateway integration and improved user experience",
-
-      projectId: "PR0001",
-
-      status: "in-progress",
-
-      releaseDate: "2024-05-15",
-
-      testCases: ["TC-PAY-001", "TC-CART-002", "TC-USER-003"],
-
-      features: ["New payment gateway", "Enhanced cart", "User dashboard"],
-
-      bugFixes: ["Fixed checkout flow", "Improved search"],
-
-      createdAt: "2024-04-01T10:00:00Z",
-    },
-
-    {
-      id: "R005",
-
-      name: "Analytics Dashboard v2.5",
-
-      version: "2.5.0",
-
-      description:
-        "Advanced analytics with real-time data visualization and custom reports",
-
-      projectId: "PR0002",
-
-      status: "planned",
-
-      releaseDate: "2024-06-01",
-
-      testCases: ["TC-ANALYTICS-001", "TC-REPORTS-002", "TC-VISUAL-003"],
-
-      features: ["Real-time analytics", "Custom reports", "Data export"],
-
-      bugFixes: ["Fixed chart rendering", "Improved performance"],
-
-      createdAt: "2024-04-15T14:00:00Z",
-    },
-  ];
-})();
-
-
-
-function useMockOrApiData(apiData: any, mockData: any): any {
-  if (!apiData || (Array.isArray(apiData) && apiData.length === 0)) {
-    return mockData;
-  }
-
-  return apiData;
-}
+const mockReleases: any[] = [];
 
 export const TestExecution: React.FC = () => {
   const { projectId, releaseId } = useParams();
@@ -625,20 +338,54 @@ export const TestExecution: React.FC = () => {
   const currentUserId = currentUser?.userId || currentUser?.employeeId || null;
   console.log("Current User ID:", currentUserId); 
 
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [testCaseToDelete, setTestCaseToDelete] = useState<any>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const canUserExecute = (testCase: any): boolean => {
     if (!currentUserId) {
-      console.log("No current user ID found");
       return false;
     }
-    
+    const role = (currentUser?.role || currentUser?.roleName || "").toUpperCase();
+    if (role === "ADMIN" || role === "QA_LEAD" || can.testCase.edit) {
+      return true;
+    }
     if (!testCase.assignedToId) {
-      console.log("Test case not assigned to anyone");
-      return false;
+      return true;
     }
-    
-    const canExecute = Number(currentUserId) === Number(testCase.assignedToId);
-    console.log(`User ${currentUserId} vs Assigned ${testCase.assignedToId}: ${canExecute}`);
-    return canExecute;
+    return Number(currentUserId) === Number(testCase.assignedToId);
+  };
+
+  const handleDeleteReleaseTestCase = async () => {
+    if (!testCaseToDelete || !selectedRelease) return;
+    setDeleteLoading(true);
+    try {
+      const releaseTestCaseId = testCaseToDelete.backendId || testCaseToDelete.releaseTestCaseId || testCaseToDelete.id;
+      await deleteReleaseTestCase(selectedRelease, releaseTestCaseId);
+      setToast({
+        isOpen: true,
+        message: "Test case removed from release execution successfully!",
+        type: "success",
+      });
+      setDeleteConfirmOpen(false);
+      setTestCaseToDelete(null);
+
+      setFilteredTestCases((prev) =>
+        prev.filter((t) => t.id !== testCaseToDelete.id && t.backendId !== releaseTestCaseId)
+      );
+
+      if (selectedProject && selectedRelease) {
+        getReleaseTestCaseCountsLoad([parseInt(selectedRelease)]);
+      }
+    } catch (err: any) {
+      setToast({
+        isOpen: true,
+        message: err?.response?.data?.message || err?.message || "Failed to remove test case",
+        type: "error",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   
@@ -856,28 +603,8 @@ export const TestExecution: React.FC = () => {
     }
   }, [selectedProject]);
 
-  // Read mockTestCases and mockQA from localStorage if available
-
-  let storedMockTestCases = null;
-
-  let storedMockQA = null;
-
-  try {
-    const stored = localStorage.getItem("mockTestCases");
-
-    if (stored) storedMockTestCases = JSON.parse(stored);
-
-    const storedQA = localStorage.getItem("mockQA");
-
-    if (storedQA) storedMockQA = JSON.parse(storedQA);
-  } catch (e) {}
-
-  const effectiveTestCases = useMockOrApiData(
-    testCases,
-    storedMockTestCases || mockTestCases,
-  );
-
-  const effectiveQA = storedMockQA || mockQA;
+  const effectiveTestCases = testCases || [];
+  const effectiveQA: any[] = [];
 
   
 
@@ -1028,14 +755,15 @@ export const TestExecution: React.FC = () => {
   }, [selectedProject, setSelectedProjectId]);
 
 useEffect(() => {
-  if (selectedProject) {
+  if (!selectedProject) return;
+
+  const fetchProjectReleasesAndCounts = () => {
     setReleaseLoading(true);
     setReleaseError("");
-    setReleaseTestCaseCounts({});
 
     projectReleaseCardView(selectedProject)
       .then((releasesRes) => {
-        if (releasesRes.status === "Success" || releasesRes.statusCode === "200") {
+        if (releasesRes.status === "Success" || releasesRes.statusCode === "200" || releasesRes.status === "success") {
           const releaseList = releasesRes.data || [];
           const filtered = releaseList.filter(
             (r: any) =>
@@ -1052,14 +780,25 @@ useEffect(() => {
           if (releaseIds.length > 0) {
             getReleaseTestCaseCountsLoad(releaseIds)
               .then((countsRes) => {
-                if (countsRes.status === "Success" || countsRes.statusCode === 200) {
+                if (countsRes.status === "Success" || countsRes.statusCode === 200 || countsRes.status === "success") {
                   const countsMap: { [key: string]: number } = {};
-                  (countsRes.data || []).forEach((item: any) => {
-                    const releaseId = item.releaseId;
-                    if (releaseId && typeof item.testCaseCount === "number") {
-                      countsMap[releaseId] = item.testCaseCount;
-                    }
-                  });
+                  const data = countsRes.data;
+                  if (Array.isArray(data)) {
+                    data.forEach((item: any) => {
+                      const releaseId = item?.releaseId ?? item?.id;
+                      const count = typeof item?.testCaseCount === "number" ? item.testCaseCount : (typeof item?.total === "number" ? item.total : 0);
+                      if (releaseId != null) {
+                        countsMap[String(releaseId)] = count;
+                        countsMap[Number(releaseId) as any] = count;
+                      }
+                    });
+                  } else if (data && typeof data === "object") {
+                    Object.entries(data).forEach(([key, val]: [string, any]) => {
+                      const count = typeof val === "number" ? val : (typeof val?.testCaseCount === "number" ? val.testCaseCount : (typeof val?.total === "number" ? val.total : 0));
+                      countsMap[key] = count;
+                      countsMap[Number(key) as any] = count;
+                    });
+                  }
                   setReleaseTestCaseCounts(countsMap);
                 } else {
                   setReleaseTestCaseCounts({});
@@ -1088,7 +827,27 @@ useEffect(() => {
         setReleaseLoading(false); 
       })
       .finally(() => setReleaseLoading(false));
-  }
+  };
+
+  fetchProjectReleasesAndCounts();
+
+  const handleRefreshEvents = () => {
+    fetchProjectReleasesAndCounts();
+  };
+
+  window.addEventListener("testCaseCreated", handleRefreshEvents);
+  window.addEventListener("testCaseAllocated", handleRefreshEvents);
+  window.addEventListener("releaseTestCaseUpdated", handleRefreshEvents);
+  window.addEventListener("storage", handleRefreshEvents);
+  window.addEventListener("focus", handleRefreshEvents);
+
+  return () => {
+    window.removeEventListener("testCaseCreated", handleRefreshEvents);
+    window.removeEventListener("testCaseAllocated", handleRefreshEvents);
+    window.removeEventListener("releaseTestCaseUpdated", handleRefreshEvents);
+    window.removeEventListener("storage", handleRefreshEvents);
+    window.removeEventListener("focus", handleRefreshEvents);
+  };
 }, [selectedProject]);
   useEffect(() => {
     getSeverities()
@@ -2956,9 +2715,12 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
     }
 
     const payload = {
-      status: "FAILED",
+      passOrFail: "FAIL",
+      status: "FAIL",
       priorityId: Number(priorityObj.id),
       assignedTo: Number(defectFormData.assignedTo),
+      briefDescription: defectFormData.title || tc.description,
+      steps: defectFormData.description || tc.steps,
     };
 
     const formData = new FormData();
@@ -2980,9 +2742,16 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
 
     console.log("Status update response:", response);
 
-    const defectNo = response?.data?.defectNo || null;
-    const executerDefectName = response?.data?.assignedTo || null;
-    const priorityName = response?.data?.priorityName || null;
+    const rawDefectId = response?.data?.defectId || response?.data?.defectNo || null;
+    const defectNo = rawDefectId
+      ? (String(rawDefectId).startsWith("DEF") ? String(rawDefectId) : `DEF-${rawDefectId}`)
+      : null;
+    const executerDefectName =
+      response?.data?.assignToName ||
+      response?.data?.assignedTo ||
+      (defectAllocatedUsers.find((u: any) => String(u.userId) === String(defectFormData.assignedTo))?.userName) ||
+      null;
+    const priorityName = response?.data?.priorityName || priorityObj.name || priorityObj.priority || null;
 
     setFilteredTestCases((prev) =>
       prev.map((t) =>
@@ -2990,7 +2759,10 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
           ? {
               ...t,
               executionStatus: "failed",
+              status: "failed",
               defectId: defectNo,
+              defectNo: defectNo,
+              assignedTo: executerDefectName || t.assignedTo,
               executerDefect: executerDefectName,
               priority: priorityName,
             }
@@ -3193,33 +2965,31 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
   }
 
   // ✅ Fetch submodule-allocated developers for the dropdown
-  const subModuleId = testCase.subModuleId; // numeric ID from testCase
-  if (subModuleId && selectedProject) {
+  const selectedSubmoduleObj = submodules.find(
+    (s: any) => s.name === selectedSubmodule || s.subModuleName === selectedSubmodule || String(s.id) === String(testCase.subModuleId)
+  );
+  const selectedModuleObj = modules.find(
+    (m: any) => m.name === selectedModule || m.moduleName === selectedModule || String(m.id) === String(testCase.moduleId)
+  );
+  const effectiveSubModuleId = testCase.subModuleId || testCase.submoduleId || selectedSubmoduleObj?.id || selectedSubmoduleObj?.subModuleId;
+  const effectiveModuleId = testCase.moduleId || selectedModuleObj?.id || 0;
+
+  if (effectiveSubModuleId) {
     setDefectAllocatedUsersLoading(true);
     try {
-      const [subModuleDevRes, projectDevsRaw] = await Promise.all([
-        getAllSubmoduleAllocatedDevBySubmoduleId(Number(subModuleId)).catch(() => ({ data: [] })),
-        getDevelopersWithRolesByProjectId(selectedProject).catch(() => []),
-      ]);
-
-      const assignedEmployeeIds = new Set(
-        (subModuleDevRes?.data || []).map((d: any) => Number(d.employeeId))
+      const subModuleDevRes = await getAllSubmoduleAllocatedDevBySubmoduleId(
+        Number(effectiveSubModuleId),
+        Number(effectiveModuleId)
       );
-      const users = Array.isArray(projectDevsRaw)
-        ? projectDevsRaw
-        : projectDevsRaw?.data || projectDevsRaw?.users || [];
-      const mappedUsers = users
-        .map((user: any) => ({
-          userId: user.employeeId || user.userId || user.id,
-          userName:
-            user.firstName && user.lastName
-              ? `${user.firstName} ${user.lastName}`.trim()
-              : user.userName || user.name || "Unknown User",
-          empId: user.employeeId || user.userId || user.id,
-        }))
-        .filter((u: any) => u.userId && u.userName && assignedEmployeeIds.has(Number(u.userId)));
+      const devs = (subModuleDevRes?.data || [])
+        .filter((d: any) => d.employeeId)
+        .map((d: any) => ({
+          userId: Number(d.employeeId),
+          userName: d.employeeName || `Employee ${d.employeeId}`,
+          empId: Number(d.employeeId),
+        }));
 
-      setDefectAllocatedUsers(mappedUsers);
+      setDefectAllocatedUsers(devs);
     } catch (error) {
       console.error("Failed to fetch developers for submodule:", error);
       setDefectAllocatedUsers([]);
@@ -3557,7 +3327,15 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
                       const databaseStatus = testCase.executionStatus;
                       const localStorageStatus = executionStatuses[testCase.id];
 
-                      const status = localStorageStatus || databaseStatus || "not-started";
+                      const rawStatus = (databaseStatus && databaseStatus !== "not-started" && databaseStatus !== "NOT_RUN")
+                        ? (databaseStatus.toUpperCase() === "PASS" || databaseStatus.toUpperCase() === "PASSED"
+                            ? "passed"
+                            : databaseStatus.toUpperCase() === "FAIL" || databaseStatus.toUpperCase() === "FAILED"
+                              ? "failed"
+                              : databaseStatus.toLowerCase())
+                        : (localStorageStatus || "not-started");
+
+                      const status = rawStatus;
 
                       const isFailed = status === "failed" || status === "FAILED" || status === "FAIL";
                       const isPassed = status === "passed" || status === "PASSED" || status === "PASS";
@@ -3828,6 +3606,18 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
                             >
                               <Eye className="w-4 h-4" />
                             </button>
+                            {can.testCase.delete && (
+                              <button
+                                onClick={() => {
+                                  setTestCaseToDelete(testCase);
+                                  setDeleteConfirmOpen(true);
+                                }}
+                                className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded ml-1"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -4329,6 +4119,39 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
             </div>
           </form>
         </Modal>
+        {deleteConfirmOpen && (
+          <div className="fixed inset-0 z-[60] flex justify-center items-start bg-black bg-opacity-40">
+            <div
+              className="mt-8 bg-[#444] text-white rounded-lg shadow-2xl min-w-[400px] max-w-[95vw]"
+              style={{ boxShadow: "0 8px 24px rgba(0,0,0,0.25)" }}
+            >
+              <div className="px-6 pb-4 pt-5 text-base text-white">
+                Are you sure you want to remove this test case from release execution?
+              </div>
+              <div className="px-6 pb-5 flex justify-end gap-3">
+                <button
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold px-6 py-2 rounded mr-2"
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    setTestCaseToDelete(null);
+                  }}
+                  type="button"
+                  disabled={deleteLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-2 rounded"
+                  onClick={handleDeleteReleaseTestCase}
+                  type="button"
+                  disabled={deleteLoading}
+                >
+                  {deleteLoading ? "Removing..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <Toast
           isOpen={toast.isOpen}
           message={toast.message}
@@ -4424,9 +4247,13 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
                   status: release.status,
 
                   testCaseCount:
-                    releaseTestCaseCounts[release.releaseId] ||
-                    releaseTestCaseCounts[release.id] ||
-                    0,
+                    releaseTestCaseCounts[release.releaseId] ??
+                    releaseTestCaseCounts[release.id] ??
+                    releaseTestCaseCounts[String(release.releaseId)] ??
+                    releaseTestCaseCounts[String(release.id)] ??
+                    (typeof release.totalTestCases === "number" ? release.totalTestCases : undefined) ??
+                    (typeof release.testCaseCount === "number" ? release.testCaseCount : undefined) ??
+                    (Array.isArray(release.testCases) ? release.testCases.length : 0),
                 });
 
                 return (
@@ -4479,9 +4306,13 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
                               ) : (
                                 (() => {
                                   const count =
-                                    releaseTestCaseCounts[release.releaseId] ||
-                                    releaseTestCaseCounts[release.id] ||
-                                    0;
+                                    releaseTestCaseCounts[release.releaseId] ??
+                                    releaseTestCaseCounts[release.id] ??
+                                    releaseTestCaseCounts[String(release.releaseId)] ??
+                                    releaseTestCaseCounts[String(release.id)] ??
+                                    (typeof release.totalTestCases === "number" ? release.totalTestCases : undefined) ??
+                                    (typeof release.testCaseCount === "number" ? release.testCaseCount : undefined) ??
+                                    (Array.isArray(release.testCases) ? release.testCases.length : 0);
                                   return count;
                                 })()
                               )}
@@ -4586,14 +4417,25 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
 
                                 if (releaseIds.length > 0) {
                                   const countsRes = await getReleaseTestCaseCountsLoad(releaseIds);
-                                  if (countsRes.status === "Success" || countsRes.statusCode === 200) {
+                                  if (countsRes.status === "Success" || countsRes.statusCode === 200 || countsRes.status === "success") {
                                     const countsMap: { [key: string]: number } = {};
-                                    (countsRes.data || []).forEach((item: any) => {
-                                      const releaseId = item.releaseId;
-                                      if (releaseId && typeof item.testCaseCount === "number") {
-                                        countsMap[releaseId] = item.testCaseCount;
-                                      }
-                                    });
+                                    const data = countsRes.data;
+                                    if (Array.isArray(data)) {
+                                      data.forEach((item: any) => {
+                                        const releaseId = item?.releaseId ?? item?.id;
+                                        const count = typeof item?.testCaseCount === "number" ? item.testCaseCount : (typeof item?.total === "number" ? item.total : 0);
+                                        if (releaseId != null) {
+                                          countsMap[String(releaseId)] = count;
+                                          countsMap[Number(releaseId) as any] = count;
+                                        }
+                                      });
+                                    } else if (data && typeof data === "object") {
+                                      Object.entries(data).forEach(([key, val]: [string, any]) => {
+                                        const count = typeof val === "number" ? val : (typeof val?.testCaseCount === "number" ? val.testCaseCount : (typeof val?.total === "number" ? val.total : 0));
+                                        countsMap[key] = count;
+                                        countsMap[Number(key) as any] = count;
+                                      });
+                                    }
                                     setReleaseTestCaseCounts(countsMap);
                                   } else {
                                     setReleaseTestCaseCounts({});
@@ -4655,14 +4497,25 @@ const handleDefectFormSubmit = async (e: React.FormEvent) => {
 
                                 if (releaseIds.length > 0) {
                                   const countsRes = await getReleaseTestCaseCountsLoad(releaseIds);
-                                  if (countsRes.status === "Success" || countsRes.statusCode === 200) {
+                                  if (countsRes.status === "Success" || countsRes.statusCode === 200 || countsRes.status === "success") {
                                     const countsMap: { [key: string]: number } = {};
-                                    (countsRes.data || []).forEach((item: any) => {
-                                      const releaseId = item.releaseId;
-                                      if (releaseId && typeof item.testCaseCount === "number") {
-                                        countsMap[releaseId] = item.testCaseCount;
-                                      }
-                                    });
+                                    const data = countsRes.data;
+                                    if (Array.isArray(data)) {
+                                      data.forEach((item: any) => {
+                                        const releaseId = item?.releaseId ?? item?.id;
+                                        const count = typeof item?.testCaseCount === "number" ? item.testCaseCount : (typeof item?.total === "number" ? item.total : 0);
+                                        if (releaseId != null) {
+                                          countsMap[String(releaseId)] = count;
+                                          countsMap[Number(releaseId) as any] = count;
+                                        }
+                                      });
+                                    } else if (data && typeof data === "object") {
+                                      Object.entries(data).forEach(([key, val]: [string, any]) => {
+                                        const count = typeof val === "number" ? val : (typeof val?.testCaseCount === "number" ? val.testCaseCount : (typeof val?.total === "number" ? val.total : 0));
+                                        countsMap[key] = count;
+                                        countsMap[Number(key) as any] = count;
+                                      });
+                                    }
                                     setReleaseTestCaseCounts(countsMap);
                                   } else {
                                     setReleaseTestCaseCounts({});

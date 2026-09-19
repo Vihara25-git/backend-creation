@@ -1,4 +1,4 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export interface Modules {
   id: number;
@@ -19,30 +19,58 @@ export interface CreateReleaseResponse {
 }
 
 export const getModulesByProjectId = async (projectId: number): Promise<CreateReleaseResponse> => {
-  const modules = mockDb.getModules(Number(projectId));
-  return {
-    status: 'success',
-    message: 'Modules fetched successfully',
-    statusCode: 200,
-    data: modules.map(m => ({
-      id: m.id,
-      name: m.name || m.moduleName || 'Module',
-      projectId: m.projectId,
-      assignedDev: m.leaderId ? {
-        userId: m.leaderId,
-        userName: m.leaderName || 'Module Leader',
-      } : null,
-      submodules: m.submodules || [],
-    })),
-  };
+  try {
+    const response = await apiClient.get(`/api/v1/project/${projectId}/module`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+
+    return {
+      status: 'success',
+      message: 'Modules fetched successfully',
+      statusCode: 200,
+      data: items.map((m: any) => ({
+        id: m.moduleId || m.id,
+        name: m.moduleName || m.name || 'Module',
+        projectId: m.projectId || projectId,
+        assignedDev: null,
+        submodules: (m.subModules || []).map((s: any) => ({
+          id: s.subModuleId || s.id,
+          subModuleId: s.subModuleId || s.id,
+          name: s.subModuleName || s.name || '',
+          subModuleName: s.subModuleName || s.name || '',
+          moduleId: s.moduleId || m.moduleId,
+        })),
+      })),
+    };
+  } catch (err: any) {
+    if (err.response?.status === 404) {
+      return {
+        status: 'success',
+        message: 'Modules fetched successfully',
+        statusCode: 200,
+        data: [],
+      };
+    }
+    throw err;
+  }
 };
 
 export async function getAllocatedUsersByModuleId(moduleId: string | number) {
-  const mod = mockDb.getModuleById(Number(moduleId));
-  const users = mockDb.getUsers();
-  return users.filter(u => mod?.assignedDevs?.includes(`${u.firstName} ${u.lastName}`) || u.id === mod?.leaderId);
+  try {
+    const response = await apiClient.get(`/api/v1/module/${moduleId}/allocated-leader`);
+    const resData = response.data?.data || response.data;
+    return Array.isArray(resData) ? resData : (resData ? [resData] : []);
+  } catch (err: any) {
+    return [];
+  }
 }
 
 export async function getUsersByAllocation(projectId: string | number, _moduleId: string | number, _subModuleId?: string | number) {
-  return mockDb.getUsers();
+  try {
+    const response = await apiClient.get(`/api/v1/bench-allocation/${projectId}/project`);
+    const resData = response.data?.data || response.data;
+    return Array.isArray(resData) ? resData : [];
+  } catch (err: any) {
+    return [];
+  }
 }

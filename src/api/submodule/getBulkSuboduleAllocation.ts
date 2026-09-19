@@ -1,18 +1,25 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export const getBulkSuboduleAllocation = async (
   projectId: number,
   moduleId: number,
   submoduleId: number
 ) => {
-  const users = mockDb.getUsers();
-  return users.slice(0, 2).map(u => ({
-    id: u.id,
-    employeeId: u.id,
-    employeeName: `${u.firstName} ${u.lastName}`,
-    projectId,
-    moduleId,
-    submoduleId,
-    role: u.roleName || 'Developer',
-  }));
+  try {
+    const response = await apiClient.get(`/api/v1/module/${moduleId}/sub-module/${submoduleId}/employee`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+
+    return items.map((a: any) => ({
+      id: a.submoduleDevId || a.id,
+      employeeId: a.employeeId || a.employee?.empId || a.empId,
+      employeeName: a.employeeName || (a.employee ? `${a.employee.firstName || ''} ${a.employee.lastName || ''}`.trim() : `Employee ${a.employeeId}`),
+      projectId,
+      moduleId,
+      submoduleId,
+      role: 'Developer',
+    }));
+  } catch {
+    return [];
+  }
 };

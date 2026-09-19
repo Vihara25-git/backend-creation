@@ -1,18 +1,20 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export const updateSubmodule = async (
   submoduleId: number,
   moduleId: number,
   data: { subModuleName: string }
 ) => {
-  const updated = mockDb.updateSubmodule(moduleId, submoduleId, {
-    name: data.subModuleName,
+  const response = await apiClient.put(`/api/v1/module/${moduleId}/sub-module/${submoduleId}`, {
     subModuleName: data.subModuleName,
+    moduleId,
   });
+  const resData = response.data?.data || response.data;
 
   return {
     status: "success",
-    message: "Submodule updated successfully",
-    data: updated,
+    success: true,
+    message: response.data?.statusMessage || "Submodule updated successfully",
+    data: resData,
   };
 };

@@ -1,81 +1,122 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
 
 export const getTestCasesByProjectAndSubmodule = async (
-  _projectId: string,
+  projectId: string,
   subModuleId: string,
-  _description?: string,
-  _defectTypeId?: number,
-  _severityId?: number,
+  description?: string,
+  defectTypeId?: number,
+  severityId?: number,
   _page?: number,
   _size: number = 1000000
 ): Promise<any[]> => {
-  const testCases = mockDb.getTestCases(Number(subModuleId));
-  const list = testCases.map(t => ({
-    id: t.id,
-    no: t.testcaseNo,
-    testcaseNo: t.testcaseNo,
-    description: t.description,
-    detailsSteps: t.detailsSteps || t.steps,
-    expectedResult: t.expectedResult,
-    subModuleId: t.subModuleId,
-    subModuleName: t.subModuleName,
-    severityId: t.severityId,
-    severityName: t.severityName,
-    defectTypeId: t.defectTypeId,
-    defectTypeName: t.defectTypeName,
-    createdAt: t.createdAt,
-    updatedAt: t.updatedAt,
-    createdBy: t.createdBy,
-    updatedBy: t.updatedBy,
-  }));
+  try {
+    const q = new URLSearchParams();
+    if (subModuleId) q.append('subModuleId', String(subModuleId));
+    if (projectId) q.append('projectId', String(projectId));
+    if (description) q.append('description', description);
+    if (defectTypeId) q.append('defectTypeId', String(defectTypeId));
+    if (severityId) q.append('severityId', String(severityId));
 
-  (list as any).totalPages = 1;
-  (list as any).totalElements = list.length;
-  (list as any).isServerPaginated = false;
-  return list;
+    const pId = projectId || '1';
+    const response = await apiClient.get(`/api/v1/project/${pId}/filter?${q.toString()}`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+
+    const list = items.map((t: any) => ({
+      id: t.testCaseId || t.id,
+      no: `TC-${t.testCaseNumber || t.testCaseId || t.id}`,
+      testcaseNo: `TC-${t.testCaseNumber || t.testCaseId || t.id}`,
+      description: t.description,
+      detailsSteps: t.testSteps || t.steps,
+      expectedResult: '',
+      moduleId: t.moduleId,
+      moduleName: t.moduleName,
+      subModuleId: t.subModuleId,
+      subModuleName: t.subModuleName,
+      severityId: t.severityId,
+      severityName: t.severityName,
+      defectTypeId: t.defectTypeId,
+      defectTypeName: t.defectTypeName,
+      type: t.defectTypeName || t.type || '',
+      defectType: t.defectTypeName || t.type || '',
+    }));
+
+    (list as any).totalPages = 1;
+    (list as any).totalElements = list.length;
+    (list as any).isServerPaginated = false;
+    return list;
+  } catch {
+    const list: any[] = [];
+    (list as any).totalPages = 1;
+    (list as any).totalElements = 0;
+    (list as any).isServerPaginated = false;
+    return list;
+  }
 };
 
 export async function deleteTestCase(
-  _subModuleId: number,
-  testCaseId: string | number
+  subModuleId: number,
+  testCaseId: string | number,
+  projectId: number = 1,
+  moduleId: number = 1
 ) {
-  mockDb.deleteTestCase(Number(testCaseId));
+  const url = (projectId && testCaseId)
+    ? `/api/v1/project/${projectId}/testcase/${testCaseId}`
+    : `/api/v1/project/${projectId || 1}/module/${moduleId || 1}/submodule/${subModuleId}/testcase/${testCaseId}`;
+  const response = await apiClient.delete(url);
   return {
     status: 'success',
-    statusCode: 200,
+    statusCode: response.status || 200,
     message: 'Test case deleted successfully',
   };
 }
 
 export async function getTestCasesByProjectAndModule(
-  _projectId: string | number,
+  projectId: string | number,
   moduleId: string | number,
   _page: number = 0,
   _size: number = 1000000
 ) {
-  const testCases = mockDb.getTestCases();
-  const filtered = testCases.filter(t => t.moduleId === Number(moduleId) || Number(moduleId) === 1);
-  const list = filtered.map(t => ({
-    id: t.id,
-    no: t.testcaseNo,
-    testcaseNo: t.testcaseNo,
-    description: t.description,
-    detailsSteps: t.detailsSteps || t.steps,
-    expectedResult: t.expectedResult,
-    subModuleId: t.subModuleId,
-    subModuleName: t.subModuleName,
-    severityId: t.severityId,
-    severityName: t.severityName,
-    defectTypeId: t.defectTypeId,
-    defectTypeName: t.defectTypeName,
-    createdAt: t.createdAt,
-    updatedAt: t.updatedAt,
-  }));
+  try {
+    const q = new URLSearchParams();
+    if (moduleId) q.append('moduleId', String(moduleId));
+    if (projectId) q.append('projectId', String(projectId));
 
-  (list as any).totalPages = 1;
-  (list as any).totalElements = list.length;
-  (list as any).isServerPaginated = false;
-  return list;
+    const pId = projectId || '1';
+    const response = await apiClient.get(`/api/v1/project/${pId}/filter?${q.toString()}`);
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+
+    const list = items.map((t: any) => ({
+      id: t.testCaseId || t.id,
+      no: `TC-${t.testCaseNumber || t.testCaseId || t.id}`,
+      testcaseNo: `TC-${t.testCaseNumber || t.testCaseId || t.id}`,
+      description: t.description,
+      detailsSteps: t.testSteps || t.steps,
+      expectedResult: '',
+      moduleId: t.moduleId,
+      moduleName: t.moduleName,
+      subModuleId: t.subModuleId,
+      subModuleName: t.subModuleName,
+      severityId: t.severityId,
+      severityName: t.severityName,
+      defectTypeId: t.defectTypeId,
+      defectTypeName: t.defectTypeName,
+      type: t.defectTypeName || t.type || '',
+      defectType: t.defectTypeName || t.type || '',
+    }));
+
+    (list as any).totalPages = 1;
+    (list as any).totalElements = list.length;
+    (list as any).isServerPaginated = false;
+    return list;
+  } catch {
+    const list: any[] = [];
+    (list as any).totalPages = 1;
+    (list as any).totalElements = 0;
+    (list as any).isServerPaginated = false;
+    return list;
+  }
 }
 
 export async function getTestCasesByBulkModules(

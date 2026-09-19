@@ -1,4 +1,4 @@
-import { mockDb, INITIAL_PERMISSIONS } from "../mock/mockData";
+import apiClient from "../lib/api";
 
 export interface Permission {
   permissionId: number;
@@ -21,7 +21,7 @@ export interface GetPrivilegesResponse {
 }
 
 export interface PermissionAssignmentChange {
-  permissionId: string;
+  permissionId: string | number;
   isAssigned: boolean;
 }
 
@@ -60,88 +60,213 @@ export interface RolePermissionByRoleResponse {
 }
 
 export const getAllPrivileges = async (): Promise<GetPrivilegesResponse> => {
-  return {
-    status: 'success',
-    statusCode: 200,
-    statusMessage: 'Success',
-    data: INITIAL_PERMISSIONS,
-  };
+  try {
+    const response = await apiClient.get('/api/v1/permission');
+    const resData = response.data?.data || response.data;
+    const modules = Array.isArray(resData) ? resData : [];
+
+    return {
+      status: 'success',
+      statusCode: response.status || 200,
+      statusMessage: response.data?.statusMessage || 'Success',
+      data: modules.map((m: any) => ({
+        module: m.module || m.moduleName || 'Module',
+        permissions: (m.permissions || []).map((p: any) => ({
+          permissionId: p.permissionId || p.id,
+          action: p.action || p.name || '',
+          description: p.description || null,
+        })),
+      })),
+    };
+  } catch (err: any) {
+    return {
+      status: 'error',
+      statusCode: err.response?.status || 500,
+      statusMessage: err.message || 'Failed to fetch permissions',
+      data: [],
+    };
+  }
 };
 
-export const getRolePermission = async (_roleId: number): Promise<RolePermissionResponse> => {
-  const allIds: number[] = [];
-  INITIAL_PERMISSIONS.forEach(m => {
-    m.permissions.forEach(p => allIds.push(p.permissionId));
-  });
+export const getRolePermission = async (roleId: number): Promise<RolePermissionResponse> => {
+  try {
+    const response = await apiClient.get(`/api/v1/assign-permission/matrix/${roleId}`);
+    const resData = response.data?.data || response.data;
 
-  return {
-    status: 'success',
-    statusCode: 200,
-    statusMessage: 'Success',
-    data: {
-      permissionIds: allIds,
-      messages: ['All permissions assigned'],
-    },
-  };
+    return {
+      status: 'success',
+      statusCode: response.status || 200,
+      statusMessage: 'Success',
+      data: {
+        permissionIds: Array.isArray(resData?.permissionIds) ? resData.permissionIds : [],
+        messages: Array.isArray(resData?.messages) ? resData.messages : ['Retrieved successfully'],
+      },
+    };
+  } catch (err: any) {
+    return {
+      status: 'error',
+      statusCode: err.response?.status || 500,
+      statusMessage: err.message || 'Failed to fetch role permissions',
+      data: { permissionIds: [], messages: [] },
+    };
+  }
 };
 
 export const getRolePermissionByRoleId = async (
-  _roleId: number | string
+  roleId: number | string
 ): Promise<RolePermissionByRoleResponse> => {
-  const allIds: PermissionId[] = [];
-  INITIAL_PERMISSIONS.forEach(m => {
-    m.permissions.forEach(p => allIds.push(p.permissionId));
-  });
-
+  const res = await getRolePermission(Number(roleId));
   return {
-    permissionIds: allIds,
+    permissionIds: res.data.permissionIds,
   };
 };
 
-export const addRolePermission = async (roleId: number, rolePermissions: PermissionAssignmentChange[]): Promise<RolePermissionResponse> => {
+export const addRolePermission = async (
+  roleId: number,
+  rolePermissions: PermissionAssignmentChange[]
+): Promise<RolePermissionResponse> => {
+  const payload = rolePermissions.map(p => ({
+    permissionId: String(p.permissionId),
+    isAssigned: Boolean(p.isAssigned),
+  }));
+
+  const response = await apiClient.post(`/api/v1/assign-permission/matrix/${roleId}`, payload);
+  const resData = response.data?.data || response.data;
+
   return {
     status: 'success',
-    statusCode: 200,
-    statusMessage: 'Role permissions updated successfully',
+    statusCode: response.status || 200,
+    statusMessage: response.data?.statusMessage || 'Role permissions updated successfully',
     data: {
-      permissionIds: rolePermissions.map(p => Number(p.permissionId)),
-      messages: ['Permissions updated successfully'],
+      permissionIds: Array.isArray(resData?.permissionIds) ? resData.permissionIds : [],
+      messages: Array.isArray(resData?.messages) ? resData.messages : ['Updated successfully'],
     },
   };
 };
 
-export const getAllEmployeePermission = async (_employeeId: number): Promise<UserPrivilegeResponse> => {
+export const getAllEmployeePermission = async (employeeId: number): Promise<UserPrivilegeResponse> => {
+  try {
+    const response = await apiClient.get(`/api/v1/employee/${employeeId}/permission`);
+    const resData = response.data?.data || response.data;
+    const modules = Array.isArray(resData) ? resData : [];
+
+    return {
+      status: 'success',
+      statusCode: response.status || 200,
+      statusMessage: 'Success',
+      data: modules.map((m: any) => ({
+        module: m.module || m.moduleName || 'Module',
+        permissions: (m.permissions || []).map((p: any) => ({
+          permissionId: p.permissionId || p.id,
+          action: p.action || '',
+          description: p.description || null,
+          checked: Boolean(p.checked || p.isAssigned),
+          inheritedFromRole: Boolean(p.inheritedFromRole),
+        })),
+      })),
+    };
+  } catch (err: any) {
+    return {
+      status: 'error',
+      statusCode: err.response?.status || 500,
+      statusMessage: err.message || 'Failed to fetch employee permissions',
+      data: [],
+    };
+  }
+};
+
+export const addEmployeePermission = async (
+  employeeId: number,
+  payload: EmployeePermissionUpdatePayload
+): Promise<UserPrivilegeResponse> => {
+  const response = await apiClient.post(`/api/v1/employee/${employeeId}/permission`, {
+    permissionIds: payload.permissionIds,
+  });
+  const resData = response.data?.data || response.data;
+  const modules = Array.isArray(resData) ? resData : [];
+
   return {
     status: 'success',
-    statusCode: 200,
-    statusMessage: 'Success',
-    data: INITIAL_PERMISSIONS.map(m => ({
-      module: m.module,
-      permissions: m.permissions.map(p => ({
-        permissionId: p.permissionId,
-        action: p.action,
-        description: p.description,
-        checked: true,
-        inheritedFromRole: true,
+    statusCode: response.status || 200,
+    statusMessage: 'Employee permissions updated successfully',
+    data: modules.map((m: any) => ({
+      module: m.module || m.moduleName || 'Module',
+      permissions: (m.permissions || []).map((p: any) => ({
+        permissionId: p.permissionId || p.id,
+        action: p.action || '',
+        description: p.description || null,
+        checked: Boolean(p.checked || p.isAssigned),
+        inheritedFromRole: Boolean(p.inheritedFromRole),
       })),
     })),
   };
 };
 
-export const addEmployeePermission = async (_employeeId: number, payload: EmployeePermissionUpdatePayload): Promise<UserPrivilegeResponse> => {
+export interface PrivilegeTemplateItem {
+  id: number;
+  type: string;
+  subType: string;
+  description: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreatePrivilegeTemplatePayload {
+  type: string;
+  subType: string;
+  description?: string;
+}
+
+export const getAllPrivilegeTemplates = async (): Promise<PrivilegeTemplateItem[]> => {
+  try {
+    const response = await apiClient.get('/api/v1/privilege-templates');
+    const resData = response.data?.data || response.data;
+    const items = Array.isArray(resData) ? resData : [];
+    return items.map((item: any) => ({
+      id: item.id,
+      type: item.type || '',
+      subType: item.subType || '',
+      description: item.description || '',
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    }));
+  } catch (err) {
+    console.error('Error fetching privilege templates:', err);
+    return [];
+  }
+};
+
+export const createPrivilegeTemplate = async (
+  payload: CreatePrivilegeTemplatePayload
+): Promise<PrivilegeTemplateItem> => {
+  const response = await apiClient.post('/api/v1/privilege-templates', payload);
+  const item = response.data?.data || response.data;
   return {
-    status: 'success',
-    statusCode: 200,
-    statusMessage: 'Employee permissions updated successfully',
-    data: INITIAL_PERMISSIONS.map(m => ({
-      module: m.module,
-      permissions: m.permissions.map(p => ({
-        permissionId: p.permissionId,
-        action: p.action,
-        description: p.description,
-        checked: payload.permissionIds.includes(p.permissionId),
-        inheritedFromRole: false,
-      })),
-    })),
+    id: item.id,
+    type: item.type || '',
+    subType: item.subType || '',
+    description: item.description || '',
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
   };
+};
+
+export const updatePrivilegeTemplate = async (
+  id: number,
+  payload: CreatePrivilegeTemplatePayload
+): Promise<PrivilegeTemplateItem> => {
+  const response = await apiClient.put(`/api/v1/privilege-templates/${id}`, payload);
+  const item = response.data?.data || response.data;
+  return {
+    id: item.id,
+    type: item.type || '',
+    subType: item.subType || '',
+    description: item.description || '',
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+};
+
+export const deletePrivilegeTemplate = async (id: number): Promise<void> => {
+  await apiClient.delete(`/api/v1/privilege-templates/${id}`);
 };

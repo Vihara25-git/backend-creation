@@ -29,14 +29,15 @@ interface LocalDesignation {
 
 interface LocalEmployee {
   id: string;
-  userId : number;
+  userId?: string | number;
   firstName: string;
   lastName: string;
   gender: string;
   email: string;
   contactNo: string;
   name: string;
-   designationId: number;
+  designationId: number;
+  designationName?: string;
   joinDate: string;
   isActive:boolean;
   skills: string[];
@@ -99,15 +100,46 @@ export const Employees: React.FC = () => {
   const showToast = (message: string, type: "success" | "error" = "success") =>
     setToast({ isOpen: true, message, type });
 
+  const formatEmployeeId = (id: string | number, emp?: LocalEmployee | null) => {
+    const employee = emp || allEmployees.find((e) => String(e.id) === String(id));
+    if (employee && employee.userId) {
+      const uId = String(employee.userId).trim();
+      const match = uId.match(/^EMP[-_]?(\d+)$/i);
+      if (match) {
+        return `EMP${match[1].padStart(4, "0")}`;
+      }
+      if (uId.startsWith("EMP") && uId.length <= 8) {
+        return uId;
+      }
+    }
+
+    const num = typeof id === "string" ? parseInt(id, 10) : id;
+    if (!isNaN(num) && num > 0 && num < 100000) {
+      return `EMP${num.toString().padStart(4, "0")}`;
+    }
+
+    if (allEmployees && allEmployees.length > 0) {
+      const sorted = [...allEmployees].sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+      const index = sorted.findIndex((e) => String(e.id) === String(id));
+      if (index !== -1) {
+        return `EMP${(index + 1).toString().padStart(4, "0")}`;
+      }
+    }
+
+    if (isNaN(num)) return String(id);
+    return `EMP${num.toString().padStart(4, "0")}`;
+  };
+
   const filteredEmployees = allEmployees.filter((emp) => {
+  const formattedId = formatEmployeeId(emp.id, emp).toLowerCase();
   const matchesSearch =
     !searchTerm.trim() ||
     emp.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.email.toLocaleLowerCase().includes(searchTerm.toLowerCase())||                              
     emp.contactNo.includes(searchTerm) ||
-    
-    `EMP${String(emp.id).padStart(4, "0")}`.toLowerCase().includes(searchTerm.toLowerCase());
+    formattedId.includes(searchTerm.toLowerCase()) ||
+    String(emp.id).toLowerCase().includes(searchTerm.toLowerCase());
 
   const matchesStatus = !isActiveFilter || String(emp.isActive) === isActiveFilter;
   const matchesGender = !genderFilter || emp.gender === genderFilter;
@@ -371,12 +403,6 @@ const confirmDelete = async () => {
   );
 };
 
-  const formatEmployeeId = (id: string | number) => {
-    const num = typeof id === "string" ? parseInt(id, 10) : id;
-    if (isNaN(num)) return String(id);
-    return `EMP${num.toString().padStart(4, "0")}`;
-  };
-
   const getStatusBadge = (isActive: boolean | number) => {
   const active = isActive === true || isActive === 1;
   if (active) {
@@ -489,7 +515,7 @@ const confirmDelete = async () => {
                   <TableBody>
                     {paginatedEmployees.map((emp) => (
                       <TableRow key={emp.id}>
-                        <TableCell className="font-mono text-sm">{formatEmployeeId(emp.id)}</TableCell>
+                        <TableCell className="font-mono text-sm">{formatEmployeeId(emp.id, emp)}</TableCell>
                         <TableCell>{emp.firstName}</TableCell>
                         <TableCell>{emp.lastName}</TableCell>
                         <TableCell>{emp.gender || "-"}</TableCell>
@@ -649,7 +675,7 @@ const confirmDelete = async () => {
                 <div>
                   <h4 className="font-semibold text-gray-900 mb-2">Basic Information</h4>
                   <div className="space-y-2 text-sm">
-                    <p><span className="font-medium">Employee ID:</span> {formatEmployeeId(viewingEmployee.id)}</p>
+                    <p><span className="font-medium">Employee ID:</span> {formatEmployeeId(viewingEmployee.id, viewingEmployee)}</p>
                     <p><span className="font-medium">First Name:</span> {viewingEmployee.firstName}</p>
                     <p><span className="font-medium">Last Name:</span> {viewingEmployee.lastName}</p>
                     <p><span className="font-medium">Gender:</span> {viewingEmployee.gender}</p>

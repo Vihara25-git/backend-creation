@@ -1,10 +1,12 @@
-import { mockDb } from "../../mock/mockData";
+import apiClient from "../../lib/api";
+import { ENDPOINTS } from "../../utils/apiendpoint";
 
 export const deleterole = async (id: number) => {
-  mockDb.deleteRole(id);
+  const response = await apiClient.delete(ENDPOINTS.roleDelete(id));
   return {
     status: 'success',
-    statusCode: 200,
-    message: 'Role deleted successfully',
+    statusCode: response.status || 200,
+    message: response.data?.statusMessage || 'Role deleted successfully',
+    statusMessage: response.data?.statusMessage || 'Role deleted successfully',
   };
 };

@@ -271,7 +271,7 @@ if (
     setFormData({
       name: status.name,
       color: normalizeColor(status.color),
-      type: status.type,
+      type: status.type || status.statusType || "OPEN",
     });
     setIsEditModalOpen(true);
   };
@@ -368,7 +368,7 @@ const handleStatusNameInput = (e: React.ChangeEvent<HTMLInputElement>) => {
                       <TableCell>
                         <div className="flex items-center">
                           
-                          <span>{status.type}</span>
+                          <span>{STATUS_TYPES.find((st) => st.value === status.type)?.label ?? (status.type || "Open")}</span>
                         </div>
                       </TableCell>
                       <TableCell>
